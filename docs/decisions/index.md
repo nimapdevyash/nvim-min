@@ -657,3 +657,22 @@ signal on exactly the machine that needed the warning most. The fix creates a re
 immediately deleted) venv and checks `<venv>/bin/pip` is executable — the only way to verify what
 actually matters, since there's no cheaper signal that reliably distinguishes "venv module present"
 from "venv module present *and* produces a usable environment."
+
+---
+
+## Dashboard slogan dropped to transliteration only — the Devanagari-in-terminal risk materialized {#slogan-transliteration-only}
+
+**Decision.** Remove the Devanagari script line from the dashboard slogan (`lua/config/
+dashboard.lua`'s `SLOGANS` table); keep only the Roman transliteration + meaning.
+
+**Context.** When [the slogan was first added](#dashboard), the choice to include Devanagari
+alongside the transliteration was made with an explicit caveat noted at the time: terminals are
+built around fixed-width monospace cells, which conflicts with how Devanagari's conjuncts and
+reordering vowel signs actually need to be shaped, so rendering could come out garbled depending
+on the terminal/font's complex-text-shaping support. That risk was flagged as *possible*, not
+*confirmed*, and left in on the reasoning that the transliteration line was already there as a
+safe fallback either way. It then actually happened — a real screenshot showed the Devanagari
+rendering with conjuncts/vowel signs visibly out of order. Since the transliteration line already
+carries the full meaning on its own, and terminal Unicode/font support can't be reliably detected
+from within Neovim to conditionally show one or the other, removing the script line entirely is
+the simplest fix that's correct on every terminal rather than correct on some.

@@ -16,9 +16,14 @@ local LOGO = {
 
 local TAGLINE = "nvim-min · MERN + DevOps + Gen AI"
 
--- Extensible on purpose — add more here and the random pick below just works.
+-- Transliteration only, not the Devanagari script — terminals are built
+-- around fixed-width monospace cells, which conflicts with how Devanagari
+-- conjuncts and reordering vowel signs actually need to be shaped. Confirmed
+-- broken (garbled glyph order) in real use rather than left as a
+-- theoretical risk. Extensible on purpose — add more here and the random
+-- pick below just works.
 local SLOGANS = {
-  { text = "वीरभोग्या वसुन्धरा", sub = "Vīrabhogyā Vasundharā — the earth is enjoyed by the brave" },
+  { text = "Vīrabhogyā Vasundharā", sub = "the earth is enjoyed by the brave" },
 }
 
 math.randomseed(vim.uv.hrtime())

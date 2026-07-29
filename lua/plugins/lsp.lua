@@ -169,7 +169,12 @@ return {
           "lua_ls", "basedpyright", "ruff", "bashls", "dockerls",
           "docker_compose_language_service", "terraformls", "marksman",
         },
-        automatic_enable = true,
+        -- automatic_enable scans ALL installed mason packages, not just the
+        -- ensure_installed list above — stylua also ships an lspconfig entry
+        -- (its own `--lsp` formatting-only mode), so without this exclusion
+        -- it gets auto-enabled as a redundant LSP client on every Lua buffer
+        -- purely because we install it via Mason for conform.nvim.
+        automatic_enable = { exclude = { "stylua" } },
       })
     end,
   },

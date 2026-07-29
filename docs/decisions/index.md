@@ -236,3 +236,103 @@ check whether the OS or a terminal tool already does it, and whether the existin
 terminal (`lua/config/terminal.lua`) already handles the plumbing. Only reach for a plugin if
 neither covers it — and hold it to the same "does Neovim/an existing tool already do this?" bar
 as everything else (see `CLAUDE.md`).
+
+---
+
+## One-command setup: `install.sh` {#install-script}
+
+**Decision.** A single `install.sh` at the repo root: detects the OS/package manager, installs
+whatever's missing from the requirements list, symlinks the CLI helpers onto `PATH`, wires the
+`nv` alias into the shell rc, bootstraps nvim (plugins, LSP servers, treesitter parsers), and
+offers to launch `nvim-min-setup` at the end.
+
+**Context.** Explicit ask: clone the repo, run one script, get a fully working setup — "it should
+install everything that needs based on the OS and also trigger that setup config at the end if
+user selects that he wants to customize the config."
+
+**Two bugs this surfaced** (both fixed, both worth remembering):
+- `mason-lspconfig`'s automatic install **intentionally never runs under `--headless`** — its
+  source checks `#vim.api.nvim_list_uis() == 0` and skips `ensure_installed` entirely when true.
+  Every one of this session's earlier headless verification attempts silently didn't exercise
+  this path at all; it works correctly on a real interactive launch regardless.  `install.sh`
+  works around this by calling the exact same install functions
+  (`require("mason-lspconfig.features.ensure_installed")`,
+  `require("nvim-treesitter.install").ensure_installed_sync()`) directly in a headless session, so
+  everything is already installed by the time you open nvim for real.
+- Both of those functions live inside plugins (`nvim-lspconfig`, `nvim-treesitter`) that are
+  lazy-loaded on file-open events (`BufReadPre`/`BufReadPost`) — with no file buffer open during a
+  scripted bootstrap, they never load, and calling their commands/functions directly would either
+  no-op (empty `ensure_installed` list) or error (`E492: Not an editor command: TSUpdateSync`).
+  Fixed by force-loading them first via lazy.nvim's own scripting API:
+  `require("lazy").load({ plugins = { "nvim-treesitter", "nvim-lspconfig" } })`.
+
+**Alternatives considered.** A Dockerfile/devcontainer — heavier, and doesn't help someone
+installing directly onto their own machine, which is the actual target here.
+
+**Example.**
+```lua
+-- the exact fix for both lazy-loading traps above
+require("lazy").load({ plugins = { "nvim-treesitter", "nvim-lspconfig" } })
+require("nvim-treesitter.install").ensure_installed_sync()
+require("mason-registry").refresh(function()
+  require("mason-lspconfig.features.ensure_installed")()
+end)
+```
+
+---
+
+## The setup CLI is a real Node CLI, not a bash+jq script {#node-cli}
+
+**Decision.** Rewrite `bin/nvim-min-setup` from bash+`jq` to Node.js using
+[`@clack/prompts`](https://github.com/bombshell-dev/clack) + `picocolors` — the same category of
+tooling behind `npm create vite@latest`, `create-t3-app`, and similar scaffolding CLIs.
+
+**Context.** Explicit ask: "can we have the CLI like when creating a vite app, a beautiful CLI."
+bash's `select` only does numbered-list menus with no arrow-key navigation, no checkboxes, no
+masked password input, and no color beyond raw ANSI codes hand-rolled per line — genuinely
+inferior UX to what's being asked for. Since Node + npm are already a hard requirement for this
+entire config (Mason installs most LSP servers through npm), requiring Node for the setup CLI too
+adds no new category of dependency — it's already there. `jq` is no longer required at all now
+that JSON is handled with `JSON.parse`/`JSON.stringify` directly.
+
+**Non-negotiable constraint carried over unchanged:** the CLI's dependencies
+(`~/.config/nvim-min/package.json`, `node_modules/`) are entirely separate from anything nvim
+loads at runtime — nvim never requires, shells out to, or waits on this tool. `install.sh` runs
+`npm install` for the CLI's own deps as one bootstrap step, exactly like it bootstraps nvim's
+plugins as a separate step; neither blocks or slows down the other.
+
+**File format contract preserved exactly.** `settings.json` and `secrets.env`'s shape (keys,
+structure, the `GEMINI_API_KEY=` line format) didn't change — only the tool that reads and writes
+them did. `lua/config/user_settings.lua` needed zero changes.
+
+**Alternatives considered.** `enquirer`/`inquirer` — heavier, older API conventions; `prompts` —
+lighter but visually plainer, lacks the boxed intro/outro chrome that gives the "vite-like" feel
+specifically asked for. `@clack/prompts` was chosen because its aesthetic (bordered steps, colored
+status symbols, grouped prompts) is the closest match to what "like creating a vite app" actually
+looks like today.
+
+---
+
+## `mason-lspconfig`'s `automatic_enable` isn't scoped to `ensure_installed` {#automatic-enable-scope}
+
+**Decision.** Explicitly exclude `stylua` from `automatic_enable` in `lua/plugins/lsp.lua`
+(`automatic_enable = { exclude = { "stylua" } }`).
+
+**Context.** Discovered while verifying LSP attach end-to-end after `install.sh`: opening a real
+`.lua` file showed **two** attached clients — `lua_ls`, and unexpectedly `stylua` (running as
+`stylua --lsp`, a real formatting-only LSP mode stylua supports). `stylua` is installed via Mason
+purely as a *formatter* for conform.nvim (`mason_ensure_installed({"prettierd", "stylua",
+"shfmt"})`), never listed in mason-lspconfig's `ensure_installed`. It turns out
+`automatic_enable = true` scans **every installed Mason package**, not just the ones in
+`ensure_installed` — and nvim-lspconfig happens to ship a `lsp/stylua.lua` server config, so any
+Mason-installed `stylua` gets auto-enabled as an LSP client regardless of why it was installed.
+Harmless in effect (conform.nvim already formats via stylua directly, so this was purely
+redundant), but it's exactly the kind of "work that doesn't pay for itself" the
+[Zed-inspired performance discipline](/guide/lsp-and-performance) argues against, and it was
+silent — nothing would have surfaced this without opening a real file and inspecting
+`vim.lsp.get_clients()` directly, which is why `CLAUDE.md`'s testing guidance insists on that over
+just checking `:LspInfo` shows *a* client.
+
+**Alternatives considered.** Not installing `stylua` via Mason (use a system package instead) —
+rejected, loses the auto-install-on-first-launch convenience for no real gain; the exclusion is a
+one-line fix.

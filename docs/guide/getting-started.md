@@ -3,34 +3,30 @@
 nvim-min is a from-scratch Neovim config that sits *alongside* your existing config — it doesn't
 replace it, doesn't touch it, and can be removed without leaving a trace anywhere else.
 
-## Requirements
-
-- Neovim **0.12+**
-- `git`, `curl`, `tar`, a C compiler (`cc`) — treesitter parsers compile on first use
-- [`fzf`](https://github.com/junegunn/fzf), [`ripgrep`](https://github.com/BurntSushi/ripgrep) — fuzzy finding / grep
-- [`lazygit`](https://github.com/jesseduffield/lazygit) — `<leader>gg`
-- `node` + `npm` — most LSP servers/formatters install through Mason via npm
-- `jq` — used by the [setup CLI](/guide/setup-cli), not by nvim itself
-- A [Gemini API key](https://aistudio.google.com/apikey) for the AI features (optional, see [AI features](/guide/ai-features))
-
-## Install
-
-If you're reading this from the repo you already have it — clone it to `~/.config/nvim-min` if
-you don't:
+## One command
 
 ```sh
 git clone https://github.com/nimapdevyash/nvim-min ~/.config/nvim-min
+cd ~/.config/nvim-min && ./install.sh
 ```
 
-Symlink the setup CLI onto your `PATH` (or run it directly from `bin/`):
+That's the whole setup. `install.sh`:
 
-```sh
-ln -s ~/.config/nvim-min/bin/nvim-min-setup ~/.local/bin/nvim-min-setup
-```
+1. Detects your OS/package manager and installs whatever's missing (git, curl, tar, a C compiler,
+   fzf, ripgrep, lazygit, node+npm, Python's `venv` module).
+2. Installs `nvim-min-setup`'s own dependencies and symlinks it (and `nvims`) onto your `PATH`.
+3. Wires the `nv` alias into your shell rc — idempotent, safe to re-run.
+4. Bootstraps nvim itself: plugins, LSP servers, treesitter parsers. Genuinely takes a few minutes
+   the first time (Mason installs ~15 language servers via npm) — that's normal.
+5. Offers to launch the interactive setup CLI right then, so you can paste your Gemini key and
+   pick a theme before you ever open nvim.
 
-## Configure
+See [Decision history → One-command setup](/decisions/#install-script) for why it's built this
+way, including two real headless-Neovim gotchas it works around.
 
-nvim-min never asks you anything at runtime. Configure it *before* opening it:
+## Configure any time
+
+Didn't set your API key or theme during `install.sh`? Run the CLI directly:
 
 ```sh
 nvim-min-setup ai        # paste your Gemini API key
@@ -39,18 +35,28 @@ nvim-min-setup theme     # pick a catppuccin flavour + transparency
 
 Full CLI reference: [The setup CLI](/guide/setup-cli).
 
-## First launch
+## Launch
 
 ```sh
-NVIM_APPNAME=nvim-min nvim
+nv
 ```
 
-...or use the [`nvims` picker or `nv` alias](/guide/switching-configs) if you've set those up.
+...or `NVIM_APPNAME=nvim-min nvim` directly, or the [`nvims` picker](/guide/switching-configs).
+Once it settles, run `:checkhealth vim.lsp` to confirm servers came up, and open a real
+`.ts`/`.py`/`.tf` file to check `gd`, `K`, and `<leader>ca` actually work — an empty buffer won't
+exercise any of it.
 
-First launch installs plugins, LSP servers, and treesitter parsers — this genuinely takes a
-minute or two (Mason installs ~15 language servers via npm). Once it settles, run
-`:checkhealth vim.lsp` to confirm servers came up, and open a real `.ts`/`.py`/`.tf` file to check
-`gd`, `K`, and `<leader>ca` actually work — an empty buffer won't exercise any of it.
+## Requirements
+
+Handled for you by `install.sh` — listed here for reference:
+
+- Neovim **0.12+**
+- `git`, `curl`, `tar`, a C compiler (`cc`) — treesitter parsers compile on first use
+- [`fzf`](https://github.com/junegunn/fzf), [`ripgrep`](https://github.com/BurntSushi/ripgrep) — fuzzy finding / grep
+- [`lazygit`](https://github.com/jesseduffield/lazygit) — `<leader>gg`
+- `node` + `npm` — most LSP servers/formatters install through Mason via npm; also runs the setup CLI
+- Python's `venv` module (`python3-venv` on Debian/Ubuntu) — needed for `basedpyright`/`ruff` to install
+- A [Gemini API key](https://aistudio.google.com/apikey) for the AI features (optional, see [AI features](/guide/ai-features))
 
 ## Next
 

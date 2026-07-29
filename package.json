@@ -1,0 +1,11 @@
+{
+  "name": "nvim-min",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Setup CLI for nvim-min (bin/nvim-min-setup). Not part of the nvim runtime — see CLAUDE.md.",
+  "type": "module",
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "picocolors": "^1.1.1"
+  }
+}

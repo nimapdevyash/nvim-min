@@ -5,6 +5,13 @@ two files at startup and otherwise never prompts you for anything — see
 [Decision history → Decoupled configuration](/decisions/#decoupled-config)
 for why.
 
+It's a small Node CLI built with [`@clack/prompts`](https://github.com/bombshell-dev/clack) —
+arrow-key select menus, masked password input, checkboxes for feature toggles — the same category
+of polish as `npm create vite@latest`, not a plain `read`/`select` bash script. See
+[Decision history → The setup CLI is a real Node CLI](/decisions/#node-cli) for why. `install.sh`
+installs its dependencies (`@clack/prompts`, `picocolors` — nothing nvim itself needs) as part of
+first-time setup; run it again any time with `cd ~/.config/nvim-min && npm install`.
+
 ```
 nvim-min-setup            interactive menu
 nvim-min-setup ai         set your Gemini API key
@@ -72,3 +79,4 @@ the CLI ships with — nvim never fails to start over a bad settings file.
 | `~/.config/nvim-min/user/settings.json` | theme, transparency, feature toggles | No — gitignored |
 | `~/.config/nvim-min/user/secrets.env` | `GEMINI_API_KEY=...` | No — gitignored, `chmod 600` |
 | `~/.config/nvim-min/bin/nvim-min-setup` | the CLI itself | **Yes** |
+| `~/.config/nvim-min/package.json` | the CLI's own deps (`@clack/prompts`, `picocolors`) | **Yes** (`node_modules/` gitignored) |

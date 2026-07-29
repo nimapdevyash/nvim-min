@@ -13,10 +13,14 @@ another config (LazyVim, at `~/.config/nvim`) exists as a sibling and must not b
 referenced by anything in here.
 
 Configuration is deliberately split in two: nvim-min itself (this Lua config — stays minimal,
-never prompts for input at runtime) and `nvim-min-setup` (`bin/nvim-min-setup` — a separate bash
-CLI that owns all interactive setup: API keys, theme, feature toggles). Don't blur this line by
-adding interactive prompts, settings UIs, or setup wizards to the Lua side — that belongs in the
-CLI, which is allowed to have dependencies (`jq`) and complexity the editor itself isn't.
+never prompts for input at runtime) and `nvim-min-setup` (`bin/nvim-min-setup` — a separate Node
+CLI, built with `@clack/prompts`, that owns all interactive setup: API keys, theme, feature
+toggles). Don't blur this line by adding interactive prompts, settings UIs, or setup wizards to
+the Lua side — that belongs in the CLI, which is allowed to have dependencies and complexity the
+editor itself isn't. `install.sh` at the repo root is the third piece: a bootstrap script that
+installs system requirements, wires up `nvim-min-setup`/`nvims`, and bootstraps nvim itself on a
+fresh clone. All three are independent — nvim never imports, shells out to, or waits on either of
+the other two at runtime.
 
 ## Non-negotiable principles
 
@@ -81,16 +85,28 @@ CLI, which is allowed to have dependencies (`jq`) and complexity the editor itse
    Anything in `keymaps.lua` that calls into a togglable plugin (e.g. the `<Tab>` ghost-text
    handler) must `pcall(require, ...)` around it, since the module genuinely won't exist when
    disabled.
-9. **jq's `//` operator treats `false` as falsy, same as `null`.** `jq -r '.some_bool // true'`
-   will silently return `true` even when `some_bool` is really `false` — this bit
-   `bin/nvim-min-setup`'s feature-toggle reads once already. Don't use `//` for defaulting a
-   boolean field read out of a JSON blob that `current_settings()` (or equivalent) already
-   guarantees is fully populated; just read the field directly.
-10. **Keep LSP servers fast.** `update_in_insert = false`, disabled LSP semantic tokens (treesitter
+9. **Headless Neovim skips things you'd expect to just work.** `mason-lspconfig`'s automatic
+   install checks `#vim.api.nvim_list_uis() == 0` and silently no-ops under `--headless` — every
+   plugin that's lazy-loaded on a file-open event (`nvim-lspconfig` on `BufReadPre`,
+   `nvim-treesitter` on `BufReadPost`) also never loads in a headless session with no file buffer
+   open, so their commands/functions aren't even registered. `install.sh`'s bootstrap works around
+   both by force-loading plugins directly (`require("lazy").load({ plugins = {...} })`) before
+   calling their install functions — see `docs/decisions/index.md#install-script`. Keep this in
+   mind before assuming a headless test proves something works; verify against a real interactive
+   launch (or the same force-load trick) for anything gated on lazy-loading or UI presence.
+10. **`mason-lspconfig`'s `automatic_enable` isn't scoped to `ensure_installed`.** It scans *every*
+   installed Mason package and auto-enables any that also happen to have an `nvim-lspconfig`
+   entry — which is how `stylua` (installed only as a conform.nvim formatter) ended up silently
+   attached as a redundant LSP client on every Lua buffer (`stylua --lsp`). Fixed with
+   `automatic_enable = { exclude = { "stylua" } }` in `lua/plugins/lsp.lua`. If you add a
+   Mason-installed formatter/tool, check whether `nvim-lspconfig` also ships an `lsp/<name>.lua`
+   for it before assuming it's formatter-only.
+11. **Keep LSP servers fast.** `update_in_insert = false`, disabled LSP semantic tokens (treesitter
    already highlights — see the `LspAttach` callback in `lua/plugins/lsp.lua`), opt-in inlay
    hints (`<leader>ch`, off by default), and pared-down `vtsls` inlay hint kinds all exist for a
    reason. If you add a server, don't regress this — test on a real TypeScript file, not just
-   that it attaches. Before adding another "speed" tweak, check whether Neovim core already does
+   that it attaches (and check `vim.lsp.get_clients()` for anything *unexpected* attaching too —
+   see principle #10). Before adding another "speed" tweak, check whether Neovim core already does
    it (e.g. `flags.debounce_text_changes` already defaults to 150ms, and
    `vim/lsp/_watchfiles.lua` already excludes `node_modules`/`.git/objects` from polling) —
    verify in `$VIMRUNTIME/lua/vim/lsp/` before adding config for something core already handles.
@@ -98,13 +114,19 @@ CLI, which is allowed to have dependencies (`jq`) and complexity the editor itse
 ## Structure
 
 ```
+install.sh                    fresh-clone bootstrap: system deps, PATH/alias wiring, nvim
+                               bootstrap, offers to launch nvim-min-setup at the end
+package.json, node_modules/    deps for bin/nvim-min-setup ONLY (@clack/prompts, picocolors) —
+                               gitignored node_modules, installed by install.sh; nvim never
+                               touches this
 init.lua                    leader keys → load_secrets() → config.options → config.lazy →
                              config.keymaps → config.autocmds, in that order (order matters:
                              secrets must be in the env before any plugin spec evaluates;
                              lazy needs mapleader set first; keymaps need plugins registered
                              so lazy-loading `keys = {...}` specs work)
 bin/
-  nvim-min-setup               the config CLI — see principle #0 (decoupling) above
+  nvim-min-setup               the config CLI (Node + @clack/prompts) — see decoupling note above
+  nvims                        nvm-style picker across every ~/.config/nvim* config
 lua/config/
   options.lua                 vim.opt, disabled built-ins/providers, diagnostics/fold config
   keymaps.lua                 ALL keybindings (see principle #2)
@@ -154,8 +176,8 @@ content.
   `lua/plugins/<concern>.lua` file (or extend an existing one if it fits an existing concern) —
   don't dump unrelated plugins into one file.
 - **Add a CLI-configurable feature toggle** (à la `features.ghost_text`): add the key + default
-  to both `DEFAULTS.features` in `lua/config/user_settings.lua` *and* `DEFAULT_SETTINGS` in
-  `bin/nvim-min-setup` (they must match — nothing enforces this automatically), add a case to
-  `cmd_features()` in the CLI, and gate the plugin's lazy spec with
+  to both the `DEFAULTS` object in `lua/config/user_settings.lua` *and* the `DEFAULTS` object in
+  `bin/nvim-min-setup` (they must match — nothing enforces this automatically), add it as an
+  option in `cmdFeatures()`'s `multiselect` in the CLI, and gate the plugin's lazy spec with
   `enabled = require("config.user_settings").load().features.<name>` (see principle #7 and
   `lua/plugins/ai.lua` for the pattern).

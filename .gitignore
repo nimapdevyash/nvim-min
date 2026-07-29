@@ -7,3 +7,7 @@
 docs/node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+
+# nvim-min-setup's own dependencies (@clack/prompts, picocolors) — installed
+# by install.sh, not part of the nvim runtime
+/node_modules/

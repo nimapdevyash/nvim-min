@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# nvims: nvm-style picker for Neovim configs.
+# Lists every ~/.config/nvim* directory in a fuzzy-searchable CLI UI (fzf)
+# and launches nvim with NVIM_APPNAME set to the chosen config.
+#
+# Usage:
+#   nvims              interactive picker
+#   nvims <name>        launch a specific config directly, e.g. `nvims nvim-min`
+#   nvims -- <files>    interactive picker, then open <files> in the chosen config
+
+set -euo pipefail
+
+config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+mapfile -t configs < <(
+  find "$config_root" -maxdepth 1 -mindepth 1 -type d -name 'nvim*' -printf '%f\n' | sort
+)
+
+if [[ ${#configs[@]} -eq 0 ]]; then
+  echo "nvims: no nvim* config directories found under $config_root" >&2
+  exit 1
+fi
+
+pick_with_fzf() {
+  local preview_cmd
+  preview_cmd='
+    cfg={};
+    if [ -f "'"$config_root"'/{}/README.md" ]; then
+      bat --style=plain --color=always --language=markdown "'"$config_root"'/{}/README.md" 2>/dev/null \
+        || cat "'"$config_root"'/{}/README.md"
+    else
+      echo "(no README.md)"
+    fi
+  '
+  printf '%s\n' "${configs[@]}" | fzf \
+    --prompt="nvim config > " \
+    --height=60% \
+    --border=rounded \
+    --header="enter: launch   esc: cancel" \
+    --preview="$preview_cmd" \
+    --preview-window=right:60%:wrap
+}
+
+target=""
+files=()
+
+if [[ $# -gt 0 && "$1" != "--" ]]; then
+  # Direct name given: `nvims nvim-min`
+  target="$1"
+  shift
+  files=("$@")
+else
+  [[ "${1:-}" == "--" ]] && shift
+  files=("$@")
+  target="$(pick_with_fzf || true)"
+fi
+
+if [[ -z "$target" ]]; then
+  echo "nvims: no config selected" >&2
+  exit 130
+fi
+
+found=0
+for c in "${configs[@]}"; do
+  [[ "$c" == "$target" ]] && found=1 && break
+done
+if [[ $found -eq 0 ]]; then
+  echo "nvims: unknown config '$target' (available: ${configs[*]})" >&2
+  exit 1
+fi
+
+export NVIM_APPNAME="$target"
+exec nvim "${files[@]}"

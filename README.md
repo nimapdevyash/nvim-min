@@ -29,46 +29,53 @@ This README stays as the quick-reference version; `docs/` is the thorough one.
 - **Configuration is decoupled from the editor.** nvim-min never prompts you for anything at
   runtime — no in-editor settings UI, no setup wizard. All of that lives in
   [`nvim-min-setup`](#configuration-cli-nvim-min-setup), a separate CLI that's allowed to be as
-  batteries-included as it wants (it uses `jq`, prompts interactively, whatever's convenient)
-  precisely because it's not part of what loads when you open a file.
+  batteries-included as it wants (it's a real Node CLI with `@clack/prompts`, not a shell script
+  squeezed for size) precisely because it's not part of what loads when you open a file.
 
 ## Requirements
+
+Handled for you by [`install.sh`](#one-command-setup-installsh) if missing — listed here for
+reference:
 
 - Neovim **0.12+**
 - `git`, `curl`, `tar`, a C compiler (`cc`) — for building treesitter parsers
 - [`fzf`](https://github.com/junegunn/fzf), [`ripgrep`](https://github.com/BurntSushi/ripgrep) — fuzzy finding / grep
 - [`lazygit`](https://github.com/jesseduffield/lazygit) — `<leader>gg`
-- `node` + `npm` — most LSP servers/formatters install through Mason via npm
-- `jq` — used by `nvim-min-setup`, the config CLI (not by nvim itself)
+- `node` + `npm` — most LSP servers/formatters install through Mason via npm; also runs the setup CLI
+- Python's `venv` module (on Debian/Ubuntu, a separate `python3-venv` package) — needed for the
+  Python LSP servers (`basedpyright`, `ruff`) to install via Mason
 - A [Gemini API key](https://aistudio.google.com/apikey) for the AI features (optional, set up below)
 
-Everything else (language servers, formatters, treesitter parsers) installs itself on first
-launch via [mason.nvim](https://github.com/mason-org/mason.nvim) / `:TSUpdate`.
+Everything else (language servers, formatters, treesitter parsers) installs itself via
+[mason.nvim](https://github.com/mason-org/mason.nvim) / `:TSUpdate` — `install.sh` triggers this
+too, so it's already done by the time you first open nvim.
 
-## Setup
-
-Configure everything through the CLI — nvim itself never prompts you for anything:
-
-```sh
-nvim-min-setup ai        # paste your Gemini API key
-nvim-min-setup theme     # pick a catppuccin flavour + transparency
-```
-
-Then launch with:
+## One-command setup (`install.sh`)
 
 ```sh
-NVIM_APPNAME=nvim-min nvim
+git clone https://github.com/nimapdevyash/nvim-min ~/.config/nvim-min
+cd ~/.config/nvim-min && ./install.sh
 ```
 
-or use the `nvims` picker / `nv` shell alias below. First launch installs plugins, LSP servers and
-treesitter parsers — give it a minute or two, then `:checkhealth vim.lsp` to confirm servers are up.
+This does everything: detects your OS/package manager and installs whatever's missing from the
+requirements above, symlinks `nvim-min-setup`/`nvims` onto your `PATH`, wires the `nv` alias into
+your shell rc (idempotently — safe to re-run), bootstraps nvim itself (plugins, LSP servers,
+treesitter parsers — genuinely takes a few minutes the first time), and finishes by offering to
+launch the interactive setup CLI right then. See
+[Decision history → One-command setup](docs/decisions/index.md#install-script) for why it's structured this way.
+
+Then launch with `nv`, or `NVIM_APPNAME=nvim-min nvim` directly, or the `nvims` picker below.
 
 ## Configuration CLI (`nvim-min-setup`)
 
 nvim-min itself is deliberately dumb about configuration: it reads two files at startup and
 otherwise doesn't ask you anything. All the interactive setup — the part that's allowed to be as
 "fully loaded" as it wants without slowing the editor down — lives in a separate tool,
-[`bin/nvim-min-setup`](bin/nvim-min-setup) (symlinked to `~/.local/bin/nvim-min-setup`, on `PATH`).
+[`bin/nvim-min-setup`](bin/nvim-min-setup) (symlinked to `~/.local/bin/nvim-min-setup` by
+`install.sh`). It's a small Node CLI built with
+[`@clack/prompts`](https://github.com/bombshell-dev/clack) — the same kind of polished,
+arrow-key-navigable experience as `npm create vite@latest` — not a bash script, precisely because
+this tool is explicitly allowed to have dependencies and a real UI that nvim itself isn't.
 
 ```
 nvim-min-setup            interactive menu

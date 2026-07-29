@@ -80,7 +80,7 @@ this tool is explicitly allowed to have dependencies and a real UI that nvim its
 ```
 nvim-min-setup            interactive menu
 nvim-min-setup ai         set your Gemini API key
-nvim-min-setup theme      pick a catppuccin flavour + transparency
+nvim-min-setup theme      pick a onedark style + transparency
 nvim-min-setup features   turn AI ghost-text / AI chat on or off — disabled
                           features don't just no-op, they don't load at all
                           (lazy.nvim `enabled = false`, a real startup-time saving)
@@ -130,7 +130,7 @@ that reimplementing it natively would be a net loss — noted per row.
 | Concern | Plugin | Why a plugin, not native |
 |---|---|---|
 | Plugin manager | [lazy.nvim](https://github.com/folke/lazy.nvim) | No native equivalent for lazy-loading + lockfile |
-| Theme | [catppuccin](https://github.com/catppuccin/nvim) (mocha, transparent) | Neovim ships no colorschemes with this level of plugin-integration highlighting |
+| Theme | [onedark.nvim](https://github.com/navarasu/onedark.nvim) (dark, transparent) | Neovim ships no built-in Atom One Dark colorscheme, let alone one with a `transparent` option |
 | Treesitter | [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) (`master` branch) | Neovim's treesitter *engine* is native; parser/query installation isn't. `master`, not `main` — the rewrite needs a system `tree-sitter-cli` 0.26+, `master` compiles with plain `cc`, zero extra deps |
 | LSP client config | [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) | Hand-maintaining `cmd`/`filetypes`/`root_markers` for 14 servers ourselves is pure duplicated upkeep for zero benefit; this is data, consumed by native `vim.lsp.config` |
 | LSP/tool installer | [mason.nvim](https://github.com/mason-org/mason.nvim) + mason-lspconfig | No native installer for external LSP binaries. (`mason-tool-installer` was cut — its whole job is ~10 lines against `mason-registry`, done directly in `lua/plugins/lsp.lua`) |

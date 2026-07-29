@@ -15,7 +15,7 @@ first-time setup; run it again any time with `cd ~/.config/nvim-min && npm insta
 ```
 nvim-min-setup            interactive menu
 nvim-min-setup ai         set your Gemini API key
-nvim-min-setup theme      pick a catppuccin flavour + transparency
+nvim-min-setup theme      pick a onedark style + transparency
 nvim-min-setup features   turn AI ghost-text / AI chat on or off
 nvim-min-setup status     show current settings (never prints the key back)
 nvim-min-setup reset      restore theme/feature settings to defaults
@@ -41,9 +41,10 @@ This file is loaded into the environment by `lua/config/user_settings.lua`, call
 nvim-min-setup theme
 ```
 
-Picks a catppuccin flavour (`latte` / `frappe` / `macchiato` / `mocha`) and whether the background
-is transparent. Written to `~/.config/nvim-min/user/settings.json`, read by
-`lua/plugins/colorscheme.lua` on the next launch.
+Picks a [onedark.nvim](https://github.com/navarasu/onedark.nvim) style (`dark` / `darker` /
+`cool` / `deep` / `warm` / `warmer` / `light`) and whether the background is transparent. Written
+to `~/.config/nvim-min/user/settings.json`, read by `lua/plugins/colorscheme.lua` on the next
+launch.
 
 ## Features
 

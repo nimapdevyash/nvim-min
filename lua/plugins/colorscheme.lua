@@ -1,31 +1,35 @@
--- Flavour/transparency are user preference, not code — managed by
+-- Style/transparency are user preference, not code — managed by
 -- `nvim-min-setup theme`, not by editing this file. See lua/config/user_settings.lua.
+local VALID_STYLES = {
+  dark = true, darker = true, cool = true, deep = true, warm = true, warmer = true, light = true,
+}
+
 return {
-  "catppuccin/nvim",
-  name = "catppuccin",
+  "navarasu/onedark.nvim",
   priority = 1000, -- load before anything else needs colors
   opts = function()
     local settings = require("config.user_settings").load()
+    -- Guards against a settings.json written by nvim-min-setup before this
+    -- config switched from catppuccin (flavour names like "mocha") to
+    -- onedark (style names like "dark") — an unrecognized value would
+    -- otherwise get passed straight through to onedark and break silently.
+    local style = VALID_STYLES[settings.theme] and settings.theme or "dark"
     return {
-      flavour = settings.theme,
-      transparent_background = settings.transparent,
-      show_end_of_buffer = false,
+      style = style,
+      transparent = settings.transparent,
       term_colors = true,
-      -- auto_integrations (default: true) detects installed plugins by name and enables
-      -- their integrations for us — blink_cmp, gitsigns, mason, fzf, mini.nvim all pick
-      -- themselves up. Only override what needs non-default styling.
-      lsp_styles = {
-        virtual_text = {
-          errors = { "italic" },
-          hints = { "italic" },
-          warnings = { "italic" },
-          information = { "italic" },
-        },
+      code_style = {
+        comments = "italic",
+      },
+      diagnostics = {
+        darker = true,
+        undercurl = true,
+        background = true,
       },
     }
   end,
   config = function(_, opts)
-    require("catppuccin").setup(opts)
-    vim.cmd.colorscheme("catppuccin")
+    require("onedark").setup(opts)
+    vim.cmd.colorscheme("onedark")
   end,
 }

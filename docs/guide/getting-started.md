@@ -30,7 +30,7 @@ Didn't set your API key or theme during `install.sh`? Run the CLI directly:
 
 ```sh
 nvim-min-setup ai        # paste your Gemini API key
-nvim-min-setup theme     # pick a catppuccin flavour + transparency
+nvim-min-setup theme     # pick a onedark style + transparency
 ```
 
 Full CLI reference: [The setup CLI](/guide/setup-cli).

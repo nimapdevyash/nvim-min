@@ -336,3 +336,42 @@ just checking `:LspInfo` shows *a* client.
 **Alternatives considered.** Not installing `stylua` via Mason (use a system package instead) —
 rejected, loses the auto-install-on-first-launch convenience for no real gain; the exclusion is a
 one-line fix.
+
+---
+
+## Theme: onedark.nvim, not catppuccin {#onedark}
+
+**Decision.** Replace `catppuccin/nvim` with
+[`navarasu/onedark.nvim`](https://github.com/navarasu/onedark.nvim) as the default (and only)
+colorscheme, defaulting to the `dark` style with transparency on.
+
+**Context.** Explicit user preference — Atom One Dark over catppuccin. `onedark.nvim` was picked
+over the alternatives (`olimorris/onedarkpro.nvim`, `joshdick/onedark.vim`) because it's actively
+maintained, has a native `transparent` option (required — the original ask was always for a
+transparent background), and its `style` variants (`dark`/`darker`/`cool`/`deep`/`warm`/`warmer`/
+`light`) map cleanly onto the same "pick a variant + transparency" flow `nvim-min-setup theme`
+already had for catppuccin's flavours.
+
+**What this loses:** catppuccin's `auto_integrations` (detects installed plugins by name and
+applies bespoke highlight refinements for blink_cmp/gitsigns/mason/fzf/mini automatically).
+onedark.nvim doesn't have an equivalent — it sets a solid set of general-purpose highlight groups
+(`@variable`, `DiagnosticError`, etc.) that every plugin already consumes by convention, so
+functionality is unaffected; only some plugin-specific visual polish is. Acceptable per this
+config's own stance that UI polish matters less than speed/functionality.
+
+**A migration trap worth knowing about:** `settings.json`'s `theme` field previously held a
+catppuccin flavour name (`"mocha"`, `"latte"`, ...). Anyone who ran `nvim-min-setup theme` before
+this change has that stale value on disk, and onedark.nvim doesn't recognize it as a valid
+`style`. Both consumers guard against this explicitly — `lua/plugins/colorscheme.lua` falls back
+to `"dark"` if `settings.theme` isn't one of onedark's known styles, and
+`bin/nvim-min-setup`'s `cmdTheme()` does the same for the picker's `initialValue` — rather than
+silently passing an invalid value through and letting the colorscheme break or error. This is the
+same "config must survive being corrupted" principle from `CLAUDE.md` applied to a value that's
+*structurally* valid JSON but *semantically* stale after a schema change one field deep.
+
+**Example.**
+```lua
+-- lua/plugins/colorscheme.lua
+local VALID_STYLES = { dark = true, darker = true, cool = true, deep = true, warm = true, warmer = true, light = true }
+local style = VALID_STYLES[settings.theme] and settings.theme or "dark"
+```

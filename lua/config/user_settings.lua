@@ -7,7 +7,7 @@ local M = {}
 local user_dir = vim.fn.stdpath("config") .. "/user"
 
 local DEFAULTS = {
-  theme = "mocha", -- catppuccin flavour: latte | frappe | macchiato | mocha
+  theme = "dark", -- onedark style: dark | darker | cool | deep | warm | warmer | light
   transparent = true,
   ai_provider = "gemini",
   features = {

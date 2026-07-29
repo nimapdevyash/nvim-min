@@ -19,7 +19,7 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = { { import = "plugins" } },
-  install = { colorscheme = { "catppuccin" } },
+  install = { colorscheme = { "onedark" } },
   checker = { enabled = false }, -- don't ping GitHub on every startup
   change_detection = { notify = false },
   performance = {

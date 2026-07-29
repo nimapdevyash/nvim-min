@@ -17,7 +17,7 @@ const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
 const SECRETS_FILE = path.join(SETTINGS_DIR, "secrets.env");
 
 const DEFAULTS = {
-  theme: "mocha",
+  theme: "dark",
   transparent: true,
   ai_provider: "gemini",
   features: { ghost_text: true, ai_chat: true },
@@ -99,19 +99,26 @@ async function cmdAi() {
   p.outro(`${pc.green("Saved.")} ${RESTART_HINT}`);
 }
 
+const ONEDARK_STYLES = ["dark", "darker", "cool", "deep", "warm", "warmer", "light"];
+
 async function cmdTheme() {
   const settings = loadSettings();
   p.intro(pc.bgMagenta(pc.black(" nvim-min · Theme ")));
 
-  const flavour = checkCancel(
+  const style = checkCancel(
     await p.select({
-      message: "Catppuccin flavour",
-      initialValue: settings.theme,
+      message: "onedark.nvim style",
+      // Guards against a settings.json written before this config switched
+      // from catppuccin to onedark (old flavour names aren't valid here).
+      initialValue: ONEDARK_STYLES.includes(settings.theme) ? settings.theme : "dark",
       options: [
-        { value: "latte", label: "Latte", hint: "light" },
-        { value: "frappe", label: "Frappé" },
-        { value: "macchiato", label: "Macchiato" },
-        { value: "mocha", label: "Mocha", hint: "dark, default" },
+        { value: "dark", label: "Dark", hint: "default" },
+        { value: "darker", label: "Darker" },
+        { value: "cool", label: "Cool" },
+        { value: "deep", label: "Deep" },
+        { value: "warm", label: "Warm" },
+        { value: "warmer", label: "Warmer" },
+        { value: "light", label: "Light" },
       ],
     }),
   );
@@ -120,7 +127,7 @@ async function cmdTheme() {
     await p.confirm({ message: "Transparent background?", initialValue: settings.transparent }),
   );
 
-  writeSettings({ ...settings, theme: flavour, transparent });
+  writeSettings({ ...settings, theme: style, transparent });
   p.outro(`${pc.green("Saved.")} ${RESTART_HINT}`);
 }
 
@@ -189,7 +196,7 @@ ${pc.bold("nvim-min-setup")} — configure nvim-min without touching its Lua con
 Usage:
   nvim-min-setup            interactive menu
   nvim-min-setup ai         set your Gemini API key
-  nvim-min-setup theme      pick a catppuccin flavour + transparency
+  nvim-min-setup theme      pick a onedark style + transparency
   nvim-min-setup features   toggle ghost-text / AI chat on or off
   nvim-min-setup status     show current settings (never prints the key)
   nvim-min-setup reset      restore theme/feature settings to defaults
@@ -223,7 +230,7 @@ async function mainMenu() {
       message: "What would you like to configure?",
       options: [
         { value: "ai", label: "AI", hint: "Gemini API key" },
-        { value: "theme", label: "Theme", hint: "catppuccin flavour + transparency" },
+        { value: "theme", label: "Theme", hint: "onedark style + transparency" },
         { value: "features", label: "Features", hint: "toggle AI chat / ghost text" },
         { value: "status", label: "Status", hint: "show current settings" },
         { value: "reset", label: "Reset", hint: "restore defaults" },

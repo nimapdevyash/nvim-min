@@ -109,24 +109,36 @@ else
 fi
 
 # basedpyright/ruff (the Python LSP servers) install via Mason using
-# `python3 -m venv`. On Debian/Ubuntu, the venv module is a separate package
-# from python3 itself and its absence fails those two installs with a
-# confusing "spawn: python3 failed" error — check for it explicitly.
+# `python3 -m venv` + pip inside it. Checking `import venv` alone isn't
+# enough — a venv can be created structurally but still lack a working pip
+# (broken/disabled ensurepip is common on minimal Python installs), which
+# fails these two installs at the pip step with a confusing
+# "spawn: python3 failed" error. Actually create a throwaway venv and check
+# for pip inside it, rather than trusting the module import.
+venv_has_pip() {
+  local tmp; tmp="$(mktemp -d)"
+  python3 -m venv "$tmp" >/dev/null 2>&1
+  local result=1
+  [[ -x "$tmp/bin/pip" ]] && result=0
+  rm -rf "$tmp"
+  return $result
+}
+
 if have python3; then
-  if python3 -c "import venv" >/dev/null 2>&1; then
-    skip "python3 venv module already available"
+  if venv_has_pip; then
+    skip "python3 venv + pip already working"
   elif [[ "$PKG" == "apt" ]]; then
     py_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-    printf '  Installing python3-venv (needed for basedpyright/ruff)...\n'
-    if sudo apt-get install -y "python${py_minor}-venv" 2>/dev/null || sudo apt-get install -y python3-venv; then
-      ok "python3-venv installed"
+    printf '  Installing python3-venv + python3-pip (needed for basedpyright/ruff)...\n'
+    if sudo apt-get install -y "python${py_minor}-venv" python3-pip 2>/dev/null || sudo apt-get install -y python3-venv python3-pip; then
+      ok "python3-venv + python3-pip installed"
     else
-      warn "python3-venv install failed — basedpyright/ruff won't install until you run:"
-      warn "  sudo apt-get install python${py_minor}-venv"
+      warn "install failed — basedpyright/ruff won't install until you run:"
+      warn "  sudo apt-get install python${py_minor}-venv python3-pip"
     fi
   else
-    warn "python3's venv module isn't available — basedpyright/ruff may fail to install."
-    warn "On Debian/Ubuntu this is a separate package (python3-venv); other distros usually bundle it."
+    warn "python3 can't create a working venv+pip — basedpyright/ruff may fail to install."
+    warn "On Debian/Ubuntu this needs separate packages (python3-venv, python3-pip); other distros usually bundle both."
   fi
 else
   warn "python3 not found — basedpyright/ruff (Python LSP) won't be installable until it is"

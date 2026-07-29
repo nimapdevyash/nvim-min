@@ -615,3 +615,45 @@ so N splits produce N+1 independently-justified zones. Three zones was the natur
 thing, centered thing, right things," rather than hand-computing padding to fake center-alignment
 (which the dashboard's `center()`/`center_block()` helpers do, out of necessity, since a plain
 scratch buffer has no such native split mechanism — the statusline does).
+
+**Superseded almost immediately:** the very next round of feedback moved the file path back
+next to the branch (both on the left) and asked for a transparent bar background — two zones
+now, not three. Documented here rather than silently editing the entry above, since the "three
+zones for left/center/right" reasoning was sound for what was asked *at the time*; it just wasn't
+the final shape. See below.
+
+---
+
+## Statusline background is also transparent, and file path moved back next to branch {#statusline-v4}
+
+**Decision.** Back to two zones: branch pill + file path together on the left, diagnostics/
+language/position/mode pills on the right. Also explicitly clear `StatusLine`/`StatusLineNC`
+background (`bg = "NONE"`) so the bar has no color strip of its own — pills float directly on the
+terminal's background, matching the tmux bar's look exactly.
+
+**Context.** Direct feedback: put the file path next to the branch, and make the bar "transparent
+or glass like the tmux bar." The transparent-background gap existed because onedark.nvim's own
+`transparent = true` option only clears `Normal`/`SignColumn`/etc — not `StatusLine`, which most
+colorschemes treat as UI chrome rather than editor background on purpose (a deliberate choice
+upstream, not an oversight to work around). Confirmed by checking `vim.api.nvim_get_hl(0, {name =
+"StatusLine"})` before this change: it had no explicit background set by onedark at all, meaning
+it was inheriting whatever solid-color default Neovim falls back to — clearing it directly here
+was the correct, and only, fix.
+
+---
+
+## Mason's python3-venv check needed to verify pip too, not just the venv module {#mason-venv-pip}
+
+**Decision.** Strengthen the [earlier venv check](#mason-venv-skip): instead of testing whether
+`python3 -c "import venv"` succeeds, actually create a throwaway venv and check whether `pip`
+exists inside it, in both `lua/plugins/lsp.lua` and `install.sh`.
+
+**Context.** The `ruff` install failure this was supposed to fix was still happening after the
+first fix shipped. Root cause: the `venv` *module* can import successfully while `python3 -m venv`
+still produces a venv with no working `pip` inside it — broken or disabled `ensurepip` is a known
+issue on minimal/stripped-down Python installs. Mason's basedpyright/ruff install fails at the
+*pip* step, not the *venv* step, so checking only the module import gave a false "this will work"
+signal on exactly the machine that needed the warning most. The fix creates a real (throwaway,
+immediately deleted) venv and checks `<venv>/bin/pip` is executable — the only way to verify what
+actually matters, since there's no cheaper signal that reliably distinguishes "venv module present"
+from "venv module present *and* produces a usable environment."

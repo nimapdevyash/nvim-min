@@ -182,17 +182,28 @@ return {
       -- launch with a scary red error ("failed to install ruff..."). Check
       -- once and skip them with one clear, actionable message instead of a
       -- recurring one that just looks broken.
-      local has_venv = vim.fn.executable("python3") == 1
-      if has_venv then
-        vim.fn.system({ "python3", "-c", "import venv" })
-        has_venv = vim.v.shell_error == 0
+      -- Checking `import venv` alone isn't enough: a venv can be created
+      -- structurally but still lack a working `pip` inside it (broken/
+      -- disabled ensurepip is common on minimal Python installs) — mason's
+      -- basedpyright/ruff install fails at the pip step, not the venv step,
+      -- so that's what actually needs verifying. This is the same failure
+      -- category this exact check was added for before; the first version
+      -- only caught the venv-missing case, not this one.
+      local function python_venv_has_pip()
+        if vim.fn.executable("python3") == 0 then return false end
+        local tmp = vim.fn.tempname()
+        vim.fn.system({ "python3", "-m", "venv", tmp })
+        local ok = vim.v.shell_error == 0 and vim.fn.executable(tmp .. "/bin/pip") == 1
+        vim.fn.delete(tmp, "rf")
+        return ok
       end
-      if has_venv then
+
+      if python_venv_has_pip() then
         vim.list_extend(ensure_installed, { "basedpyright", "ruff" })
       else
         vim.notify(
-          "Skipping basedpyright/ruff — python3's venv module isn't available.\n"
-            .. "Debian/Ubuntu: sudo apt-get install python3-venv (or python3.X-venv), then restart nvim.",
+          "Skipping basedpyright/ruff — python3 can't create a venv with a working pip.\n"
+            .. "Debian/Ubuntu: sudo apt-get install python3-venv python3-pip, then restart nvim.",
           vim.log.levels.WARN,
           { title = "nvim-min" }
         )

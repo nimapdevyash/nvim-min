@@ -4,9 +4,12 @@
 -- Re-evaluated on every redraw, so keep this cheap — no LSP requests, just
 -- reads of already-cached state.
 --
--- Three zones, mirroring the tmux bar: branch pill on the far left, filename
--- centered, language/position/mode pills on the right. No LSP client list —
--- that's what <leader>ci (:checkhealth vim.lsp) is for.
+-- Two zones, mirroring the tmux bar: branch pill + filepath on the left,
+-- language/position/mode pills on the right — and the bar itself has no
+-- background of its own (bg = NONE), so pills float directly on the
+-- terminal's background instead of sitting on a solid strip, matching the
+-- tmux bar's glass look. No LSP client list — that's what <leader>ci
+-- (:checkhealth vim.lsp) is for.
 local M = {}
 
 -- ple-left_half_circle_thick / ple-right_half_circle_thick — verified
@@ -88,11 +91,9 @@ function M.render()
   local filetype = vim.bo.filetype ~= "" and vim.bo.filetype or "no ft"
 
   return table.concat({
-    -- left zone: branch
+    -- left zone: branch, then the file right after it
     " ", M.git(),
-    "%=",
-    -- center zone: filename
-    "%#StatuslineFile#%f%m%r%*",
+    " %#StatuslineFile#%f%m%r%*",
     "%=",
     -- right zone: diagnostics, language, position, mode
     " ", M.diagnostics(),
@@ -120,6 +121,14 @@ function M.setup_highlights()
   hl("StatuslineDiagError", { fg = colors.red })
   hl("StatuslineDiagWarn", { fg = colors.yellow })
   hl("StatuslineMuted", { fg = colors.grey })
+
+  -- The bar itself has no background — onedark's `transparent` option only
+  -- clears Normal/SignColumn/etc, not StatusLine (most colorschemes treat
+  -- the statusline as chrome, not editor background, on purpose). Clearing
+  -- it here is what makes the pills float directly on the terminal's own
+  -- background instead of sitting on a solid strip, matching the tmux bar.
+  hl("StatusLine", { bg = "NONE" })
+  hl("StatusLineNC", { bg = "NONE" })
 end
 
 return M

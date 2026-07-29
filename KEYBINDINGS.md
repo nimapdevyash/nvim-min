@@ -19,6 +19,7 @@ Leader is `<space>`.
 
 | Key | Action |
 |---|---|
+| `<leader>h` | Open the start screen (dashboard) |
 | `<Esc>` | Clear search highlight |
 | `jk` (insert) | Exit insert mode |
 | `<leader>w` | Save file |
@@ -158,3 +159,20 @@ under the cursor (`<cfile>`), else the current buffer.
 |---|---|
 | `<leader>ox` | Open in the OS default app (`xdg-open`/`open`) |
 | `<leader>oi` | Preview inline in a floating terminal via `kitten icat`, falls back to `<leader>ox` if `kitten` isn't installed |
+
+## Start screen (dashboard)
+
+Shows automatically on launching nvim with no file argument; reopen any time with `<leader>h` or
+`:Dashboard`. No plugin — see `lua/config/dashboard.lua`. Keys are buffer-local, only active on
+the dashboard itself.
+
+| Key | Action |
+|---|---|
+| `1`–`5` | Open that recent file (from `vim.v.oldfiles`, whichever still exist on disk) |
+| `f` | Find files |
+| `g` | Live grep |
+| `r` | Recent files (full fzf-lua picker) |
+| `e` | File manager (oil.nvim) |
+| `a` | AI chat |
+| `n` | New file |
+| `q` | Quit |

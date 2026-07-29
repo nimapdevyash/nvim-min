@@ -20,6 +20,7 @@ map("n", "<leader>fK", function()
 end, d("Grep keymaps.lua / config source"))
 
 -- ── General ─────────────────────────────────────────────────────────────────
+map("n", "<leader>h", "<cmd>Dashboard<cr>", d("Open the start screen"))
 map("n", "<Esc>", "<cmd>nohlsearch<cr>", d("Clear search highlight"))
 map({ "n", "v" }, "<leader>w", "<cmd>w<cr>", d("Save file"))
 map("n", "<leader>W", "<cmd>wa<cr>", d("Save all files"))

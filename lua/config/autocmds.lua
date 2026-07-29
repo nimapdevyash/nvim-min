@@ -56,3 +56,26 @@ autocmd("TermOpen", {
     vim.cmd.startinsert()
   end,
 })
+
+-- Native start screen (see lua/config/dashboard.lua) — only when nvim opens
+-- with no file args into an empty, unnamed, unmodified buffer (i.e. not
+-- `nvim file.txt`, not restoring a session, not reading from a pipe).
+require("config.dashboard").setup_highlights()
+autocmd("ColorScheme", {
+  group = augroup("dashboard_highlights", { clear = true }),
+  callback = function() require("config.dashboard").setup_highlights() end,
+})
+autocmd("VimEnter", {
+  group = augroup("dashboard_open", { clear = true }),
+  callback = function()
+    if vim.fn.argc() > 0 then return end
+    local buf = vim.api.nvim_get_current_buf()
+    if vim.api.nvim_buf_get_name(buf) ~= "" then return end
+    if vim.bo[buf].modified then return end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    if #lines > 1 or lines[1] ~= "" then return end
+    require("config.dashboard").open()
+  end,
+})
+
+vim.api.nvim_create_user_command("Dashboard", function() require("config.dashboard").open() end, {})

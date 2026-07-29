@@ -375,3 +375,38 @@ same "config must survive being corrupted" principle from `CLAUDE.md` applied to
 local VALID_STYLES = { dark = true, darker = true, cool = true, deep = true, warm = true, warmer = true, light = true }
 local style = VALID_STYLES[settings.theme] and settings.theme or "dark"
 ```
+
+---
+
+## Start screen: a scratch buffer, not alpha.nvim/dashboard.nvim/snacks {#dashboard}
+
+**Decision.** Build the start screen (shown on launching nvim with no file argument) as a plain
+scratch buffer in `lua/config/dashboard.lua` — no dashboard plugin.
+
+**Context.** Explicit ask for a personalized dashboard with recent files and quick actions,
+"without any plugins." Everything a dashboard plugin provides is either already native or trivial
+to build from native APIs: `vim.v.oldfiles` is Neovim's own recently-opened-files list (populated
+from shada, zero extra tracking needed), `require("lazy").stats()` gives the plugin-count/load-time
+footer for free, and a scratch buffer (`buftype=nofile`) plus buffer-local `vim.keymap.set` calls
+is all a "press a key, do a thing" menu needs.
+
+**A real testing trap this surfaced:** every `nvim --headless ... -c "qa!"` test run showed an
+empty buffer, looking exactly like the dashboard wasn't opening. Per `:h VimEnter`, that event
+fires only *after* all `-c` command-line arguments have been processed — so a `-c "qa!"` in that
+same command line quits Neovim before VimEnter ever fires, regardless of what's registered on it.
+Confirmed by registering a bare canary autocmd both with and without a trailing `qa!`: it never
+prints with `qa!` present, and prints reliably without it (using `timeout` to end the process
+instead). This is the same category of "headless testing lies to you" trap as
+[`automatic_enable` under `--headless`](#automatic-enable-scope) — verify VimEnter-triggered
+behavior by letting Neovim reach steady-state (e.g. `timeout 5 nvim --headless` with no `-c "qa!"`
+tacked on), not by looking at buffer state after a command line that quits before VimEnter runs.
+
+**Why the ASCII logo was generated, not hand-typed.** Block-letter ASCII art is trivial to get
+subtly misaligned by hand (one column of spaces off, and every line after it drifts). Generated
+correctly once with `figlet -f doom YASH`, verified byte-for-byte (`cat -A` to confirm exact
+trailing whitespace), then hardcoded as a literal Lua table — no runtime dependency on `figlet`
+being installed, but zero risk of a hand-typed alignment bug either.
+
+**Alternatives considered.** `snacks.nvim`'s dashboard module — genuinely nice, but it's one
+module of a much larger multi-purpose plugin; pulling in the whole thing for a start screen fails
+the same "does this need a plugin" bar as everything else here.

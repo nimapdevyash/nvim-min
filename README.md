@@ -150,6 +150,7 @@ that reimplementing it natively would be a net loss — noted per row.
 | mini.statusline + mini.icons | `vim.o.statusline` + a ~40-line render function, no icon font | [`lua/config/statusline.lua`](lua/config/statusline.lua) |
 | toggleterm.nvim | `nvim_open_win` + `jobstart(cmd, {term=true})`, ~50 lines, same "toggle keeps the process alive" behavior | [`lua/config/terminal.lua`](lua/config/terminal.lua) |
 | mason-tool-installer.nvim | Direct `mason-registry` calls | `lua/plugins/lsp.lua` |
+| alpha.nvim / dashboard.nvim / snacks dashboard | A scratch buffer + `vim.v.oldfiles` + `lazy.stats()`, ~180 lines | [`lua/config/dashboard.lua`](lua/config/dashboard.lua) |
 | which-key.nvim | `keymaps.lua` + `<leader>?` (fzf-lua's live keymap picker) | [KEYBINDINGS.md](KEYBINDINGS.md) |
 | Comment.nvim | Neovim's built-in `gc`/`gcc` | — |
 | indent-blankline.nvim | Not replaced — just cut. Visual only, and repaints on every cursor move | — |

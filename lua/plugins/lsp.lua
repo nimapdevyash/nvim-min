@@ -11,17 +11,38 @@ return {
     dependencies = {
       "mason-org/mason.nvim",
       "mason-org/mason-lspconfig.nvim",
-      "WhoIsSethDaniel/mason-tool-installer.nvim",
       "b0o/schemastore.nvim",
       "saghen/blink.cmp",
     },
     config = function()
+      -- Installs non-LSP tools (formatters) mason-lspconfig doesn't manage.
+      -- Uses mason.nvim's own registry API directly instead of pulling in
+      -- mason-tool-installer.nvim for what's a ~10-line job.
+      local function mason_ensure_installed(names)
+        local registry = require("mason-registry")
+        local function install_missing()
+          for _, name in ipairs(names) do
+            local ok, pkg = pcall(registry.get_package, name)
+            if ok and not pkg:is_installed() then
+              pkg:install()
+            end
+          end
+        end
+        registry.refresh(install_missing)
+      end
       -- Buffer-local keymaps + perf tweaks, set once per attached buffer
       vim.api.nvim_create_autocmd("LspAttach", {
         group = vim.api.nvim_create_augroup("lsp_attach", { clear = true }),
         callback = function(args)
           local bufnr = args.buf
           local client = vim.lsp.get_client_by_id(args.data.client_id)
+
+          -- Treesitter already highlights syntax; LSP semantic tokens would
+          -- redo that work (a real per-edit cost on vtsls/eslint) for little
+          -- extra benefit here, so skip it.
+          if client then
+            client.server_capabilities.semanticTokensProvider = nil
+          end
 
           local function map(mode, lhs, rhs, desc)
             vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, desc = desc, silent = true })
@@ -140,11 +161,8 @@ return {
         filetypes = { "html", "css", "javascript", "typescript", "javascriptreact", "typescriptreact" },
       })
 
-      -- ---- Install + enable ----
-      require("mason").setup()
-      require("mason-tool-installer").setup({
-        ensure_installed = { "prettierd", "stylua", "shfmt" },
-      })
+      -- ---- Install + enable ---- (mason.nvim itself is set up by its own plugin spec)
+      mason_ensure_installed({ "prettierd", "stylua", "shfmt" })
       require("mason-lspconfig").setup({
         ensure_installed = {
           "vtsls", "eslint", "html", "cssls", "tailwindcss", "jsonls", "yamlls",

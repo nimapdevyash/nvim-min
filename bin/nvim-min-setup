@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# nvim-min-setup: the ONLY place you configure nvim-min interactively.
+#
+# nvim-min itself stays minimal and reads config, never prompts for it — all
+# customization (AI key, theme, feature toggles) lives here, in a tool that's
+# allowed to be as "fully loaded" as it wants without slowing the editor down.
+#
+# Settings live in ~/.config/nvim-min/user/ (gitignored, machine-local):
+#   settings.json   theme, transparency, feature toggles
+#   secrets.env     API keys (chmod 600, never committed, never printed back)
+set -euo pipefail
+
+SETTINGS_DIR="$HOME/.config/nvim-min/user"
+SETTINGS_FILE="$SETTINGS_DIR/settings.json"
+SECRETS_FILE="$SETTINGS_DIR/secrets.env"
+
+DEFAULT_SETTINGS='{
+  "theme": "mocha",
+  "transparent": true,
+  "ai_provider": "gemini",
+  "features": {
+    "ghost_text": true,
+    "ai_chat": true
+  }
+}'
+
+need() { command -v "$1" >/dev/null 2>&1 || { echo "nvim-min-setup: '$1' is required but not found" >&2; exit 1; }; }
+need jq
+
+ensure_dir() {
+  mkdir -p "$SETTINGS_DIR"
+  chmod 700 "$SETTINGS_DIR"
+}
+
+current_settings() {
+  if [[ -f "$SETTINGS_FILE" ]]; then cat "$SETTINGS_FILE"; else echo "$DEFAULT_SETTINGS"; fi
+}
+
+write_settings() {
+  # reads new full JSON from stdin, writes atomically
+  ensure_dir
+  local tmp; tmp="$(mktemp "$SETTINGS_DIR/.settings.XXXXXX")"
+  cat > "$tmp"
+  mv "$tmp" "$SETTINGS_FILE"
+}
+
+cmd_status() {
+  echo "── nvim-min settings ──────────────────────────────"
+  current_settings | jq .
+  echo
+  if [[ -f "$SECRETS_FILE" ]] && grep -q '^GEMINI_API_KEY=.\+' "$SECRETS_FILE"; then
+    echo "Gemini API key: set (in $SECRETS_FILE)"
+  else
+    echo "Gemini API key: NOT set — run 'nvim-min-setup ai'"
+  fi
+}
+
+cmd_ai() {
+  ensure_dir
+  echo "Get a Gemini API key at https://aistudio.google.com/apikey"
+  read -r -s -p "Paste your Gemini API key (input hidden): " key
+  echo
+  if [[ -z "$key" ]]; then
+    echo "Empty key, nothing changed."
+    return 1
+  fi
+
+  local tmp; tmp="$(mktemp "$SETTINGS_DIR/.secrets.XXXXXX")"
+  if [[ -f "$SECRETS_FILE" ]]; then
+    grep -v '^GEMINI_API_KEY=' "$SECRETS_FILE" > "$tmp" || true
+  fi
+  echo "GEMINI_API_KEY=$key" >> "$tmp"
+  mv "$tmp" "$SECRETS_FILE"
+  chmod 600 "$SECRETS_FILE"
+  echo "Saved. Restart nvim (or 'nv') to pick it up."
+}
+
+cmd_theme() {
+  local current; current="$(current_settings | jq -r '.theme')"
+  echo "Current flavour: $current"
+  echo "Pick a catppuccin flavour:"
+  local flavour
+  select flavour in latte frappe macchiato mocha; do
+    [[ -n "${flavour:-}" ]] && break
+    echo "Invalid choice."
+  done
+
+  local transparent_current; transparent_current="$(current_settings | jq -r '.transparent')"
+  read -r -p "Transparent background? [Y/n] (currently: $transparent_current): " ans
+  local transparent="true"
+  [[ "$ans" =~ ^[Nn] ]] && transparent="false"
+
+  current_settings | jq --arg t "$flavour" --argjson tr "$transparent" \
+    '.theme = $t | .transparent = $tr' | write_settings
+  echo "Saved. Restart nvim (or 'nv') to apply."
+}
+
+cmd_features() {
+  local ghost ai_chat
+  ghost="$(current_settings | jq -r '.features.ghost_text')"
+  ai_chat="$(current_settings | jq -r '.features.ai_chat')"
+
+  echo "1) AI ghost-text suggestions (minuet-ai)  — currently: $ghost"
+  echo "2) AI chat / inline assistant (codecompanion) — currently: $ai_chat"
+  echo "3) Back"
+  read -r -p "Toggle which? [1/2/3]: " choice
+
+  case "$choice" in
+    1)
+      local new="true"; [[ "$ghost" == "true" ]] && new="false"
+      current_settings | jq --argjson v "$new" '.features.ghost_text = $v' | write_settings
+      echo "Ghost text: $new (restart nvim to apply; or use <leader>at for a this-session-only toggle)"
+      ;;
+    2)
+      local new="true"; [[ "$ai_chat" == "true" ]] && new="false"
+      current_settings | jq --argjson v "$new" '.features.ai_chat = $v' | write_settings
+      echo "AI chat: $new (restart nvim to apply)"
+      ;;
+    *) return 0 ;;
+  esac
+}
+
+cmd_reset() {
+  read -r -p "Reset theme/feature settings to defaults? API key is kept. [y/N]: " ans
+  if [[ "$ans" =~ ^[Yy] ]]; then
+    ensure_dir
+    echo "$DEFAULT_SETTINGS" | write_settings
+    echo "Reset to defaults."
+  else
+    echo "Cancelled."
+  fi
+}
+
+cmd_help() {
+  cat <<'EOF'
+nvim-min-setup — configure nvim-min without touching its Lua config
+
+Usage:
+  nvim-min-setup            interactive menu
+  nvim-min-setup ai         set your Gemini API key
+  nvim-min-setup theme      pick a catppuccin flavour + transparency
+  nvim-min-setup features   toggle ghost-text / AI chat on or off
+  nvim-min-setup status     show current settings (never prints the key)
+  nvim-min-setup reset      restore theme/feature settings to defaults
+  nvim-min-setup help       this message
+EOF
+}
+
+main_menu() {
+  echo "nvim-min-setup"
+  select choice in "AI (Gemini API key)" "Theme" "Features" "Status" "Reset to defaults" "Quit"; do
+    case "$choice" in
+      "AI (Gemini API key)") cmd_ai ;;
+      "Theme") cmd_theme ;;
+      "Features") cmd_features ;;
+      "Status") cmd_status ;;
+      "Reset to defaults") cmd_reset ;;
+      "Quit"|"") break ;;
+    esac
+    echo
+  done
+}
+
+case "${1:-}" in
+  ai) cmd_ai ;;
+  theme) cmd_theme ;;
+  features) cmd_features ;;
+  status) cmd_status ;;
+  reset) cmd_reset ;;
+  help|-h|--help) cmd_help ;;
+  "") main_menu ;;
+  *) echo "Unknown command: $1" >&2; cmd_help; exit 1 ;;
+esac

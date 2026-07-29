@@ -1,1 +1,9 @@
 .luarc.json
+
+# Machine-local settings + secrets managed by nvim-min-setup — never commit
+/user/
+
+# Docs site build artifacts
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/

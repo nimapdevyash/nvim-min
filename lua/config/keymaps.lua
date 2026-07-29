@@ -9,6 +9,11 @@ local function d(desc)
   return { desc = desc, silent = true }
 end
 
+-- Read once at startup; toggling this persistently is `nvim-min-setup features`
+-- (controls whether minuet-ai.nvim even loads). <leader>at below is a
+-- separate, session-only on/off switch for when the plugin IS loaded.
+local ghost_text_enabled = require("config.user_settings").load().features.ghost_text
+
 -- ── Keymap search (replaces which-key) ─────────────────────────────────────
 map("n", "<leader>?", function() require("fzf-lua").keymaps() end, d("Search all keymaps"))
 map("n", "<leader>fK", function()
@@ -77,6 +82,9 @@ map("n", "<leader>cq", vim.diagnostic.setloclist, d("Diagnostics to loclist"))
 -- ── LSP (buffer-local maps set in lsp.lua on LspAttach; global fallbacks here)
 map("n", "<leader>ci", "<cmd>LspInfo<cr>", d("LSP info"))
 map("n", "<leader>cm", "<cmd>Mason<cr>", d("Mason installer UI"))
+map("n", "<leader>ch", function()
+  vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = 0 }), { bufnr = 0 })
+end, d("Toggle inlay hints (off by default — real cost on big files)"))
 
 -- ── Git (gitsigns; hunk navigation, staging, blame) ─────────────────────────
 map("n", "]c", function()
@@ -100,10 +108,9 @@ map("n", "<leader>gB", function() require("gitsigns").toggle_current_line_blame(
 map("n", "<leader>gd", function() require("gitsigns").diffthis() end, d("Diff against index"))
 map("n", "<leader>gu", function() require("gitsigns").reset_buffer() end, d("Undo all hunks in buffer"))
 
--- ── Terminal / devops (toggleterm + lazygit) ────────────────────────────────
-map("n", "<leader>gg", "<cmd>LazyGit<cr>", d("Open LazyGit"))
-map("n", "<C-\\>", "<cmd>ToggleTerm direction=float<cr>", d("Toggle floating terminal"))
-map("t", "<C-\\>", "<cmd>ToggleTerm<cr>", d("Toggle terminal from terminal mode"))
+-- ── Terminal / devops (native floating terminal, see lua/config/terminal.lua)
+map("n", "<leader>gg", function() require("config.terminal").toggle_lazygit() end, d("Open LazyGit"))
+map({ "n", "t" }, "<C-\\>", function() require("config.terminal").toggle_terminal() end, d("Toggle floating terminal"))
 map("t", "<Esc>", "<C-\\><C-n>", d("Exit terminal mode"))
 
 -- ── AI / Gemini (codecompanion) ──────────────────────────────────────────────
@@ -112,3 +119,28 @@ map({ "n", "v" }, "<leader>ac", "<cmd>CodeCompanionActions<cr>", d("AI: actions 
 map("v", "<leader>aA", "<cmd>CodeCompanionChat Add<cr>", d("AI: add selection to chat"))
 map({ "n", "v" }, "<leader>ai", ":CodeCompanion ", { desc = "AI: inline prompt (type task, <cr>)" })
 map("n", "<leader>ax", "<cmd>CodeCompanionChat Toggle<cr><cmd>stopinsert<cr>", d("AI: close chat input"))
+
+-- Ghost text (minuet-ai): whole-suggestion accept lives on <Tab>, chained
+-- through blink.cmp's own <Tab> fallback (verified against blink's keymap
+-- source — a global, non-buffer-local <i> mapping is re-resolved dynamically
+-- on every fallback call, so load order here doesn't matter). Other actions
+-- (accept one line, cycle, dismiss) are bound directly by minuet itself in
+-- lua/plugins/ai.lua, since those keys don't conflict with anything.
+map("i", "<Tab>", function()
+  if ghost_text_enabled then
+    local ok, minuet = pcall(require, "minuet.virtualtext")
+    if ok and minuet.action.is_visible() then
+      minuet.action.accept()
+      return ""
+    end
+  end
+  return vim.api.nvim_replace_termcodes("<Tab>", true, true, true)
+end, { expr = true, silent = true, desc = "AI: accept ghost text (else normal Tab)" })
+
+map("n", "<leader>at", "<cmd>Minuet virtualtext toggle<cr>", d("AI: toggle ghost text (this session only)"))
+
+-- ── Open externally (images, SVGs, PDFs — outsourced, no viewer plugin) ─────
+map("n", "<leader>ox", function() require("config.external").open_externally() end,
+  d("Open file under cursor in the OS default app"))
+map("n", "<leader>oi", function() require("config.external").preview_in_terminal() end,
+  d("Preview image/SVG inline (kitten icat, else OS default app)"))

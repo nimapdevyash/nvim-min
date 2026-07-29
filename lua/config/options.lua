@@ -30,6 +30,7 @@ o.list = true
 o.listchars = { tab = "» ", trail = "·", nbsp = "␣" }
 o.showmode = false
 o.laststatus = 3
+o.statusline = "%!v:lua.require'config.statusline'.render()"
 o.pumheight = 10
 o.conceallevel = 0
 

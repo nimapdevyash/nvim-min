@@ -6,6 +6,7 @@ return {
     opts = {
       winopts = { height = 0.85, width = 0.85, border = "rounded" },
       fzf_colors = true,
+      file_icons = false, -- no icon-font plugin installed; text-only, one less dependency
     },
   },
   {
@@ -15,7 +16,7 @@ return {
     opts = {
       default_file_explorer = true,
       view_options = { show_hidden = true },
-      columns = { "icon" },
+      columns = {}, -- no icon-font plugin installed; plain filenames
       keymaps = {
         ["<C-h>"] = false, -- freed up for window navigation
         ["<C-l>"] = false,

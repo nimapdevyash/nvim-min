@@ -94,6 +94,7 @@ Leader is `<space>`.
 | `<leader>cf` | Format buffer |
 | `<leader>ci` | `:checkhealth vim.lsp` |
 | `<leader>cm` | Mason installer UI |
+| `<leader>ch` | Toggle inlay hints (off by default — real cost on big files) |
 
 ## Git (gitsigns)
 
@@ -116,7 +117,7 @@ Leader is `<space>`.
 | `<C-\>` | Toggle floating terminal |
 | `<Esc>` (terminal mode) | Exit terminal mode |
 
-## AI / Gemini (codecompanion)
+## AI chat (codecompanion, Gemini)
 
 | Key | Action |
 |---|---|
@@ -124,3 +125,31 @@ Leader is `<space>`.
 | `<leader>ac` | Actions palette |
 | `<leader>aA` (visual) | Add selection to chat |
 | `<leader>ai` | Inline prompt (type a task, `<cr>`) |
+
+## AI ghost text (minuet-ai, Gemini)
+
+Inline Copilot-style suggestions. Auto-triggers only in the languages this config targets — see
+README.md → "AI ghost text" for the exact list.
+
+| Key | Action |
+|---|---|
+| `<Tab>` | Accept whole suggestion (falls through to blink.cmp's normal Tab if no ghost text is showing) |
+| `<A-a>` | Accept one line |
+| `<A-z>` | Accept N lines (prompts for count) |
+| `<A-]>` / `<A-[>` | Next / previous suggestion |
+| `<A-e>` | Dismiss |
+| `<leader>at` | Toggle ghost text for this session only (persistent on/off is `nvim-min-setup features`) |
+
+Turning AI features fully off (not loading the plugin at all) is done outside nvim entirely:
+`nvim-min-setup features`.
+
+## Open externally (images, SVGs, PDFs)
+
+No image-preview plugin — that's real rendering-backend weight for something a terminal or the
+OS already does. These just shell out. Target is: an oil.nvim entry under the cursor, else a path
+under the cursor (`<cfile>`), else the current buffer.
+
+| Key | Action |
+|---|---|
+| `<leader>ox` | Open in the OS default app (`xdg-open`/`open`) |
+| `<leader>oi` | Preview inline in a floating terminal via `kitten icat`, falls back to `<leader>ox` if `kitten` isn't installed |

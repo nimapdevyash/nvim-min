@@ -3,15 +3,34 @@
 A from-scratch, minimal, fast Neovim config for **MERN + DevOps + Gen AI** work. Built to sit
 *alongside* your existing config (e.g. LazyVim), not replace it — see [Switching configs](#switching-configs).
 
+**Full user guide + a decision history explaining every non-obvious choice: [`docs/`](docs/)**
+(VitePress). Run it locally with:
+
+```sh
+cd docs && npm install && npm run dev
+```
+
+This README stays as the quick-reference version; `docs/` is the thorough one.
+
 ## Philosophy
 
-- **Every plugin earns its place.** No dashboards, no icon-only nice-to-haves, no plugin that
-  duplicates something Neovim already does natively (commenting, folding, diagnostics UI).
+- **Every plugin earns its place.** Before a plugin goes in, the question is: can Neovim already
+  do this natively, well enough? If yes, it's out. A plugin only survives if it does something
+  natively impossible (git gutters, fuzzy install of LSP binaries, Gemini access) — or does it so
+  much better than a hand-rolled native replacement that reimplementing it would be a net loss
+  (blink.cmp's precompiled fuzzy matcher is faster than any completefunc glue code could be).
+  Statusline, floating terminal, and file-type icons went the other way: pure Lua and
+  `nvim_open_win`/`vim.o.statusline` cover them fully, so no plugin exists for those anymore.
 - **Native APIs over frameworks.** LSP servers are wired with `vim.lsp.config()` /
   `vim.lsp.enable()` (Neovim 0.11+ core API), not the legacy `require('lspconfig').setup{}` wrapper.
 - **One file for keybindings.** No which-key popup — see [KEYBINDINGS.md](KEYBINDINGS.md) and
   [`lua/config/keymaps.lua`](lua/config/keymaps.lua). Search live keymaps with `<leader>?`.
 - **Lazy-load everything that can be.** Startup should stay near-instant as the config grows.
+- **Configuration is decoupled from the editor.** nvim-min never prompts you for anything at
+  runtime — no in-editor settings UI, no setup wizard. All of that lives in
+  [`nvim-min-setup`](#configuration-cli-nvim-min-setup), a separate CLI that's allowed to be as
+  batteries-included as it wants (it uses `jq`, prompts interactively, whatever's convenient)
+  precisely because it's not part of what loads when you open a file.
 
 ## Requirements
 
@@ -20,15 +39,19 @@ A from-scratch, minimal, fast Neovim config for **MERN + DevOps + Gen AI** work.
 - [`fzf`](https://github.com/junegunn/fzf), [`ripgrep`](https://github.com/BurntSushi/ripgrep) — fuzzy finding / grep
 - [`lazygit`](https://github.com/jesseduffield/lazygit) — `<leader>gg`
 - `node` + `npm` — most LSP servers/formatters install through Mason via npm
-- A [Gemini API key](https://aistudio.google.com/apikey) for the AI assistant (optional but the whole point)
+- `jq` — used by `nvim-min-setup`, the config CLI (not by nvim itself)
+- A [Gemini API key](https://aistudio.google.com/apikey) for the AI features (optional, set up below)
 
 Everything else (language servers, formatters, treesitter parsers) installs itself on first
 launch via [mason.nvim](https://github.com/mason-org/mason.nvim) / `:TSUpdate`.
 
 ## Setup
 
+Configure everything through the CLI — nvim itself never prompts you for anything:
+
 ```sh
-export GEMINI_API_KEY="your-key-here"   # add to ~/.zshrc, don't commit it anywhere
+nvim-min-setup ai        # paste your Gemini API key
+nvim-min-setup theme     # pick a catppuccin flavour + transparency
 ```
 
 Then launch with:
@@ -37,8 +60,39 @@ Then launch with:
 NVIM_APPNAME=nvim-min nvim
 ```
 
-or use the `nvims` picker / shell aliases below. First launch installs plugins, LSP servers and
+or use the `nvims` picker / `nv` shell alias below. First launch installs plugins, LSP servers and
 treesitter parsers — give it a minute or two, then `:checkhealth vim.lsp` to confirm servers are up.
+
+## Configuration CLI (`nvim-min-setup`)
+
+nvim-min itself is deliberately dumb about configuration: it reads two files at startup and
+otherwise doesn't ask you anything. All the interactive setup — the part that's allowed to be as
+"fully loaded" as it wants without slowing the editor down — lives in a separate tool,
+[`bin/nvim-min-setup`](bin/nvim-min-setup) (symlinked to `~/.local/bin/nvim-min-setup`, on `PATH`).
+
+```
+nvim-min-setup            interactive menu
+nvim-min-setup ai         set your Gemini API key
+nvim-min-setup theme      pick a catppuccin flavour + transparency
+nvim-min-setup features   turn AI ghost-text / AI chat on or off — disabled
+                          features don't just no-op, they don't load at all
+                          (lazy.nvim `enabled = false`, a real startup-time saving)
+nvim-min-setup status     show current settings (never prints the key back)
+nvim-min-setup reset      restore theme/feature settings to defaults
+```
+
+It writes two gitignored files under `~/.config/nvim-min/user/` (never committed, `chmod 600`):
+
+- `settings.json` — theme, transparency, feature toggles. Read by `lua/plugins/colorscheme.lua`
+  and `lua/plugins/ai.lua` at startup.
+- `secrets.env` — `GEMINI_API_KEY=...`. Loaded into the environment by
+  `lua/config/user_settings.lua` before any plugin runs, so codecompanion and minuet-ai just see
+  it as if it were exported normally.
+
+**This is deliberately hard to break permanently.** If `settings.json` goes missing or gets
+corrupted, `lua/config/user_settings.lua` falls back to the same built-in defaults the CLI ships
+with — nvim never fails to start over a bad settings file. `nvim-min-setup reset` makes that
+explicit and intentional instead of relying on the implicit fallback.
 
 ## Switching configs
 
@@ -62,26 +116,92 @@ Adding a third config later (e.g. a stripped-down `nvim-writing`) is just anothe
 
 ## What's in it, and why
 
-| Concern | Plugin | Why this one |
-|---|---|---|
-| Plugin manager | [lazy.nvim](https://github.com/folke/lazy.nvim) | Lazy-loading, lockfile, fast |
-| Theme | [catppuccin](https://github.com/catppuccin/nvim) (mocha, transparent) | Best-in-class integration highlights, native transparency |
-| Treesitter | [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) (`master` branch) | The `main` rewrite needs a system `tree-sitter-cli` 0.26+; `master` compiles with plain `cc`, zero extra deps |
-| LSP client config | [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) | Ships server definitions consumed by native `vim.lsp.config` |
-| LSP/tool installer | [mason.nvim](https://github.com/mason-org/mason.nvim) + mason-lspconfig + mason-tool-installer | Auto-installs servers/formatters, auto-`vim.lsp.enable()`s them |
-| Completion | [blink.cmp](https://github.com/saghen/blink.cmp) (`1.*`) | Fastest completion engine available; pinned to stable v1 (v2 is an active rewrite requiring an extra `blink.lib` dependency) |
-| Formatting | [conform.nvim](https://github.com/stevearc/conform.nvim) | Async, minimal, format-on-save |
-| Git signs | [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) | Gutter signs, hunks, blame |
-| Fuzzy finder | [fzf-lua](https://github.com/ibhagwan/fzf-lua) | Uses the `fzf` binary directly — faster and lighter than Telescope |
-| File manager | [oil.nvim](https://github.com/stevearc/oil.nvim) | Edit the filesystem like a buffer, replaces netrw |
-| Pairs/surround/icons/statusline | [mini.nvim](https://github.com/nvim-mini/mini.nvim) modules | One ecosystem, tiny, each module installed independently |
-| Terminal / LazyGit | [toggleterm.nvim](https://github.com/akinsho/toggleterm.nvim) | Floating terminal + `<leader>gg` LazyGit |
-| AI (Gemini) | [codecompanion.nvim](https://github.com/olimorris/codecompanion.nvim) | Native Gemini adapter, chat + inline assistant, no vendor lock-in |
+12 plugins total, two of them individually disableable at zero startup cost from the CLI (see
+below). Every plugin here does something native Neovim genuinely can't, or does it enough better
+that reimplementing it natively would be a net loss — noted per row.
 
-Deliberately **not** included: which-key (see philosophy above), a dashboard/greeter, indent-guide
-plugins (cheap visually, not cheap on every cursor move), a dedicated comment plugin (Neovim's
-built-in `gc`/`gcc` already does this), nvim-tree/neo-tree (oil.nvim covers it), Telescope
-(fzf-lua is faster for the same job).
+| Concern | Plugin | Why a plugin, not native |
+|---|---|---|
+| Plugin manager | [lazy.nvim](https://github.com/folke/lazy.nvim) | No native equivalent for lazy-loading + lockfile |
+| Theme | [catppuccin](https://github.com/catppuccin/nvim) (mocha, transparent) | Neovim ships no colorschemes with this level of plugin-integration highlighting |
+| Treesitter | [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) (`master` branch) | Neovim's treesitter *engine* is native; parser/query installation isn't. `master`, not `main` — the rewrite needs a system `tree-sitter-cli` 0.26+, `master` compiles with plain `cc`, zero extra deps |
+| LSP client config | [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) | Hand-maintaining `cmd`/`filetypes`/`root_markers` for 14 servers ourselves is pure duplicated upkeep for zero benefit; this is data, consumed by native `vim.lsp.config` |
+| LSP/tool installer | [mason.nvim](https://github.com/mason-org/mason.nvim) + mason-lspconfig | No native installer for external LSP binaries. (`mason-tool-installer` was cut — its whole job is ~10 lines against `mason-registry`, done directly in `lua/plugins/lsp.lua`) |
+| Completion | [blink.cmp](https://github.com/saghen/blink.cmp) (`1.*`) | Neovim 0.11+ *can* do native LSP-driven completion (`vim.lsp.completion.enable`), but merging LSP+path+buffer into one fuzzy-ranked list needs real glue code, and blink's precompiled matcher (0.5–4ms/keystroke) would beat a hand-rolled version anyway. Pinned to stable `1.*` — v2 is an active rewrite needing an extra `blink.lib` dependency |
+| Formatting | [conform.nvim](https://github.com/stevearc/conform.nvim) | `vim.lsp.buf.format()` alone only formats via whatever the LSP server implements — vtsls's formatting is far weaker than prettier, and eslint's LSP doesn't format at all |
+| Git signs | [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) | No native git gutter/hunk/blame support |
+| Fuzzy finder | [fzf-lua](https://github.com/ibhagwan/fzf-lua) | No native fuzzy-match UI; uses the `fzf` binary directly, lighter than Telescope |
+| File manager | [oil.nvim](https://github.com/stevearc/oil.nvim) | Native netrw exists but is slow and clunky; oil is small and meaningfully better |
+| Pairs/surround | [mini.pairs](https://github.com/nvim-mini/mini.pairs) / [mini.surround](https://github.com/nvim-mini/mini.surround) | No native auto-pairs or surround-text-object support |
+| AI chat (Gemini) | [codecompanion.nvim](https://github.com/olimorris/codecompanion.nvim) | The whole point — no native LLM integration exists. Toggle: `nvim-min-setup features` |
+| AI ghost text (Gemini) | [minuet-ai.nvim](https://github.com/milanglacier/minuet-ai.nvim) | Copilot-style inline suggestions; needs its own provider glue no native completion has. Toggle: `nvim-min-setup features` |
+
+**Replaced with native Neovim, no plugin at all:**
+
+| Used to be | Now | See |
+|---|---|---|
+| mini.statusline + mini.icons | `vim.o.statusline` + a ~40-line render function, no icon font | [`lua/config/statusline.lua`](lua/config/statusline.lua) |
+| toggleterm.nvim | `nvim_open_win` + `jobstart(cmd, {term=true})`, ~50 lines, same "toggle keeps the process alive" behavior | [`lua/config/terminal.lua`](lua/config/terminal.lua) |
+| mason-tool-installer.nvim | Direct `mason-registry` calls | `lua/plugins/lsp.lua` |
+| which-key.nvim | `keymaps.lua` + `<leader>?` (fzf-lua's live keymap picker) | [KEYBINDINGS.md](KEYBINDINGS.md) |
+| Comment.nvim | Neovim's built-in `gc`/`gcc` | — |
+| indent-blankline.nvim | Not replaced — just cut. Visual only, and repaints on every cursor move | — |
+| nvim-tree / neo-tree | oil.nvim (see table above — still a plugin, just a smaller/faster one than netrw-replacements usually are) | — |
+
+## Performance notes (Zed-inspired)
+
+Zed's speed comes from doing LSP/indexing work off the UI thread and being disciplined about
+what triggers it. The Neovim-native equivalents applied here:
+
+- **No duplicate highlighting work.** LSP semantic tokens are explicitly disabled on attach
+  (`client.server_capabilities.semanticTokensProvider = nil` in `lua/plugins/lsp.lua`) —
+  treesitter already highlights syntax, so semantic tokens would just redo that per edit for
+  servers like vtsls/eslint, for little extra benefit.
+- **Inlay hints are opt-in, not on by default.** They cost an LSP request per visible range on
+  every scroll/edit on large files. Toggle with `<leader>ch`.
+- **Diagnostics don't recompute on every keystroke** (`update_in_insert = false`).
+- **Text-change notifications are debounced 150ms** — this is actually Neovim's own default
+  (`flags.debounce_text_changes`), not something added here; confirmed by reading
+  `vim/lsp/_changetracking.lua` rather than assumed.
+- **File-watching exclusions**: also already handled by Neovim core (`vim/lsp/_watchfiles.lua`
+  excludes `node_modules/*/**`, `.git/objects`, `.hg/store` from polling by default) — checked,
+  and deliberately *not* re-implemented or disabled wholesale, since doing so would cost real
+  features (e.g. eslint reacting to config file changes) for gain Neovim already provides.
+- **vtsls inlay hint kinds are pared down** in its settings (only parameter names on literals) —
+  the rest cost more to compute than they're worth day-to-day.
+- Mason-installed binaries are cached on disk after first install — nothing to "warm up" on
+  every launch.
+
+## AI ghost text
+
+`minuet-ai.nvim` shows Gemini-generated inline suggestions as you type (Copilot-style), for
+`javascript`/`typescript`/`(t|j)sx`, `python`, `lua`, `sh`, `yaml`, `dockerfile`, `terraform`,
+`json`, `html`, `css` — the languages this config targets, not every filetype.
+
+| Key | Action |
+|---|---|
+| `<Tab>` | Accept the whole suggestion — falls through to blink.cmp's normal `<Tab>` (menu-select/snippet-jump/indent) when no ghost text is showing |
+| `<A-a>` | Accept one line only |
+| `<A-z>` | Accept N lines (prompts for a count) |
+| `<A-]>` / `<A-[>` | Cycle to next / previous suggestion |
+| `<A-e>` | Dismiss |
+| `<leader>at` | Toggle ghost text for this session only |
+
+`<leader>at` and `nvim-min-setup features` are two different levers on purpose: `<leader>at` is
+"I don't want suggestions for the next 10 minutes"; the CLI toggle is "I don't want this plugin
+loaded at all" (persists across restarts, skips loading it entirely — a real startup-time saving,
+not just a hidden no-op).
+
+## Outsourcing instead of plugins
+
+Some things are better delegated to a real terminal tool or the OS than reimplemented as an nvim
+plugin — image.nvim and friends need a rendering backend, extra deps, and redraw-on-scroll
+overhead just to show a PNG. Instead: `<leader>ox` shells out to `xdg-open`/`open` (whatever your
+OS already has configured) and `<leader>oi` renders inline in a floating terminal via
+[kitty's `icat`](https://sw.kovidgoyal.net/kitty/kittens/icat/) if installed. Both live in
+[`lua/config/external.lua`](lua/config/external.lua) — ~50 lines, zero nvim-side rendering code,
+zero cost when not invoked. This is the general pattern for anything similar going forward: reach
+for a CLI tool + the floating terminal (`lua/config/terminal.lua`) before reaching for a plugin.
 
 ## LSP servers configured
 
@@ -98,15 +218,21 @@ want it to actually run — install it separately, it's not something Mason mana
 ## Directory structure
 
 ```
-init.lua                    entrypoint: leader keys, then options → lazy → keymaps → autocmds
+init.lua                    entrypoint: leader keys → load secrets → options → lazy → keymaps → autocmds
+bin/
+  nvim-min-setup              the config CLI (symlinked to ~/.local/bin) — see Configuration CLI
 lua/config/
-  options.lua                editor options, disabled built-ins, folding
+  options.lua                editor options, disabled built-ins, folding, wires the statusline
   keymaps.lua                ALL keybindings — the single source of truth
   autocmds.lua                general autocmds (not LSP-specific — those live in plugins/lsp.lua)
   lazy.lua                    lazy.nvim bootstrap + performance settings
+  statusline.lua              native statusline (no plugin) — see Performance notes
+  terminal.lua                native floating terminal + LazyGit (no plugin) — see Performance notes
+  user_settings.lua           reads user/settings.json + user/secrets.env, defaults if missing/corrupt
 lua/plugins/
   colorscheme.lua, treesitter.lua, lsp.lua, completion.lua, formatting.lua,
-  git.lua, editor.lua, ui.lua, terminal.lua, ai.lua
+  git.lua, editor.lua, ai.lua
+user/                        gitignored — settings.json + secrets.env, written by nvim-min-setup
 KEYBINDINGS.md                human-readable keymap reference
 CLAUDE.md                     guide for AI coding agents contributing to this repo
 ```

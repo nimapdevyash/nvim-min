@@ -65,9 +65,16 @@ the other two at runtime.
    `mason.nvim`/`mason-lspconfig.nvim` moved from `williamboman` → `mason-org`, blink.cmp has an
    actively-breaking v2 alongside a stable v1). Before adding or upgrading a plugin, check its
    current README/source on GitHub (`gh api repos/<owner>/<repo>/contents/README.md -q .content
-   | base64 -d`) rather than trusting memorized APIs. This config intentionally pins
-   `blink.cmp` to `version = "1.*"` and `nvim-treesitter` to `branch = "master"` for exactly this
-   reason — confirm those pins are still the right call before changing them.
+   | base64 -d`) rather than trusting memorized APIs. This config intentionally pins `blink.cmp`
+   to `version = "1.*"` for exactly this reason — confirm that pin is still the right call before
+   changing it. `nvim-treesitter` was *also* pinned to `master` at first for the same reasoning
+   (avoid the actively-changing rewrite) — that turned out wrong in practice: `master`'s bundled
+   queries don't reliably match its own parsers on Neovim 0.12, causing a real crash
+   (`attempt to call method 'range' (a nil value)` opening any `.html` file). Now on `main`, which
+   needs a genuine `tree-sitter-cli` 0.26+ (`install.sh` handles it via brew). See
+   `docs/decisions/index.md#treesitter-main` for the full story — the lesson isn't "pin less," it's
+   "verify a pin is still correct when something breaks, don't assume the original reasoning still
+   holds."
 6. **Never hardcode secrets.** API keys live in `~/.config/nvim-min/user/secrets.env`, written by
    `nvim-min-setup ai` and loaded into the environment by
    `require("config.user_settings").load_secrets()` (called first thing in `init.lua`, before

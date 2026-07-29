@@ -552,3 +552,66 @@ them" is the actual value harpoon provides, not just numbered recency.
 **Alternatives considered.** Session-only (in-memory, no persistence) — simpler, but loses the
 main reason to reach for numbered marks over the buffer list in the first place: they're supposed
 to stay put.
+
+---
+
+## nvim-treesitter: switched from `master` to `main` after a real crash {#treesitter-main}
+
+**Decision.** Reverse the earlier [`master`-branch pin](#treesitter-branch): move to `main`
+(the actively-maintained rewrite), and have `install.sh` install a genuine `tree-sitter-cli`
+0.26+ via brew to satisfy it.
+
+**Context.** Reported bug, reproduced exactly: opening any `.html` file threw
+`Decoration provider "start" (ns=nvim.treesitter.highlighter): ... attempt to call method 'range'
+(a nil value)`, traced into `vim/treesitter/languagetree.lua` → `vim/treesitter.lua:197`
+(`M.get_range`, called with a `nil` node). Root cause: `master`'s bundled `queries/html/
+highlights.scm` doesn't reliably match the grammar version of the parser it installs on Neovim
+0.12 — a genuine incompatibility, not a caveat. The original `master` pin was deliberate (see
+[the original decision](#treesitter-branch)) specifically to *avoid* `main`'s hard requirement on
+a modern `tree-sitter-cli`, which this machine's `apt` candidate (0.20.8) doesn't satisfy (needs
+0.26.1+). That tradeoff turned out to be the wrong one once it actually broke editing — a
+frozen/legacy branch silently accumulating incompatibility with a Neovim version it never
+targeted is worse than a slightly heavier install step.
+
+**What made `main` viable now:** `brew install tree-sitter-cli` gives 0.26.11 — satisfying the
+requirement — where distro package managers don't. `install.sh` special-cases this exactly like
+`lazygit` (prefer brew when available; warn with manual instructions otherwise), since apt/dnf
+packages for this specific tool are misleadingly-named-but-wrong (they exist, they're just too
+old to matter).
+
+**API differences absorbed:** `main` only ships parsers/queries — highlighting is enabled
+yourself, per-buffer. Rather than hand-maintain a list of every language's filetype name (which
+doesn't always match the language name — `bash` the language is filetype `sh`, `vimdoc` is
+filetype `help`), a catch-all `FileType` autocmd calls `pcall(vim.treesitter.start, args.buf)`
+for every filetype; `vim.treesitter.start()` resolves the filetype→language mapping internally
+(confirmed by reading `vim/treesitter.lua`'s `M.start`/`M.get_parser`), and the `pcall` makes it a
+silent no-op wherever no parser is installed. One casualty: `main` dropped the incremental-
+selection feature (`<C-space>` node-expanding selection) that `master`'s `nvim-treesitter.configs`
+provided out of the box — not carried over, since it wasn't something anyone had asked for
+specifically and re-implementing it by hand wasn't justified just to preserve a nice-to-have.
+
+**The actual lesson** (beyond "verify online docs," which the [original pin
+already did](#treesitter-branch)): a documented caveat ("locked but will remain available for
+backward compatibility with Nvim 0.11") can be *correct as written* and *still bite you* once
+your Neovim version has moved past what it was ever tested against. Re-verify a pin's tradeoffs
+when something it depends on breaks — don't assume the reasoning that justified it originally
+still holds indefinitely.
+
+---
+
+## Statusline v2: three zones, mirroring the tmux bar {#statusline-v3}
+
+**Decision.** Restructure the statusline into three zones separated by two `%=` splits — git
+branch pill on the far left, filename centered, diagnostics + language pill + position pill +
+mode pill on the right — matching the left/center/right structure of the tmux bar this was
+explicitly modeled on. Language (`filetype`) and cursor position (`%l:%c  %P`) are now colored
+pills too, not muted grey text.
+
+**Context.** Direct feedback after the [first pill redesign](#statusline-pills): reverse the
+mode/branch positions (mode moves to the far right, branch to the far left) and make the
+language/position more visually prominent, not just present. Neovim's `statusline` format
+natively supports more than one `%=` — each one adds another left/right-justified split point,
+so N splits produce N+1 independently-justified zones. Three zones was the natural fit for "left
+thing, centered thing, right things," rather than hand-computing padding to fake center-alignment
+(which the dashboard's `center()`/`center_block()` helpers do, out of necessity, since a plain
+scratch buffer has no such native split mechanism — the statusline does).

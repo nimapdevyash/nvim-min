@@ -154,6 +154,23 @@ function M.open()
   -- them under a dashboard reads as visual clutter, not a real editing view
   vim.opt_local.fillchars:append({ eob = " " })
 
+  -- number/relativenumber/etc are WINDOW-local, not buffer-local — leaving
+  -- them off here would otherwise leak into whatever real file gets opened
+  -- next in this same window (e.g. via one of the quick actions above),
+  -- silently killing line numbers everywhere until a new split is made.
+  vim.api.nvim_create_autocmd({ "BufLeave", "BufWipeout" }, {
+    buffer = buf,
+    once = true,
+    callback = function()
+      vim.wo.number = true
+      vim.wo.relativenumber = true
+      vim.wo.signcolumn = "yes"
+      vim.wo.cursorline = true
+      vim.wo.statuscolumn = ""
+      vim.opt_local.fillchars:remove("eob")
+    end,
+  })
+
   local ns = vim.api.nvim_create_namespace("dashboard")
   for _, h in ipairs(highlights) do
     vim.api.nvim_buf_add_highlight(buf, ns, h.hl_group, h.line, 0, -1)

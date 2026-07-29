@@ -1,18 +1,17 @@
--- Native statusline: no plugin, no icon font dependency beyond the two
--- Powerline "round" glyphs below (your terminal already renders these
--- correctly — proven by the tmux bar this was modeled on). Wired via
--- `vim.o.statusline` in options.lua. Re-evaluated on every statusline redraw,
--- so keep this cheap — no LSP requests, just reads of already-cached state.
+-- Native statusline: no plugin, no icon font dependency beyond the Powerline
+-- "round" glyphs below (your terminal already renders these — proven by the
+-- tmux bar this is modeled on). Wired via `vim.o.statusline` in options.lua.
+-- Re-evaluated on every redraw, so keep this cheap — no LSP requests, just
+-- reads of already-cached state.
 --
--- Deliberately minimal: mode + git branch as colored pills (like the tmux
--- bar's branch/window pills), filename, diagnostics (only when present),
--- filetype, cursor position. No LSP client list — that's what <leader>ci
--- (:checkhealth vim.lsp) is for, not something to show on every keystroke.
+-- Three zones, mirroring the tmux bar: branch pill on the far left, filename
+-- centered, language/position/mode pills on the right. No LSP client list —
+-- that's what <leader>ci (:checkhealth vim.lsp) is for.
 local M = {}
 
 -- ple-left_half_circle_thick / ple-right_half_circle_thick — verified
--- against the Nerd Fonts glyph names, not guessed: U+E0B6 is the "(" shaped
--- left cap, U+E0B4 the ")" shaped right cap.
+-- against the Nerd Fonts glyph names: U+E0B6 is the "(" shaped left cap,
+-- U+E0B4 the ")" shaped right cap.
 local PILL_LEFT = "\u{E0B6}"
 local PILL_RIGHT = "\u{E0B4}"
 
@@ -42,8 +41,8 @@ local MODES = {
   t = { "TERMINAL", "StatuslineModeTerminal" },
 }
 
--- name -> onedark.colors palette key, used both to build the "Cap" variant
--- and to iterate in setup_highlights() without repeating each group twice.
+-- name -> onedark.colors palette key, built + iterated together in
+-- setup_highlights() so each pill's "Cap" variant never drifts out of sync.
 local PILL_GROUPS = {
   StatuslineModeNormal = "blue",
   StatuslineModeInsert = "green",
@@ -52,6 +51,8 @@ local PILL_GROUPS = {
   StatuslineModeCommand = "orange",
   StatuslineModeTerminal = "cyan",
   StatuslineGitPill = "green",
+  StatuslineLangPill = "yellow",
+  StatuslinePosPill = "purple",
 }
 
 function M.mode()
@@ -64,7 +65,7 @@ end
 -- Reuses gitsigns' own buffer-local state rather than shelling out to git again.
 function M.git()
   local head = vim.b.gitsigns_head
-  return (head and head ~= "") and (" " .. pill(head, "StatuslineGitPill")) or ""
+  return (head and head ~= "") and pill(head, "StatuslineGitPill") or ""
 end
 
 function M.diagnostics()
@@ -74,7 +75,7 @@ function M.diagnostics()
   local parts = {}
   if err and err > 0 then parts[#parts + 1] = "%#StatuslineDiagError#E:" .. err .. "%*" end
   if warn and warn > 0 then parts[#parts + 1] = "%#StatuslineDiagWarn#W:" .. warn .. "%*" end
-  return #parts > 0 and (" " .. table.concat(parts, " ") .. " ") or ""
+  return #parts > 0 and (table.concat(parts, " ") .. " ") or ""
 end
 
 function M.render()
@@ -83,14 +84,21 @@ function M.render()
   -- so render() itself has to check what's actually on screen.
   if vim.bo.filetype == "dashboard" then return "" end
 
-  local label, hl = M.mode()
+  local mode_label, mode_hl = M.mode()
+  local filetype = vim.bo.filetype ~= "" and vim.bo.filetype or "no ft"
+
   return table.concat({
-    " ", pill(label, hl),
-    " %#StatuslineFile#%f%m%r%*",
-    M.git(),
+    -- left zone: branch
+    " ", M.git(),
     "%=",
-    M.diagnostics(),
-    "%#StatuslineMuted# %y  %l:%c  %P %*",
+    -- center zone: filename
+    "%#StatuslineFile#%f%m%r%*",
+    "%=",
+    -- right zone: diagnostics, language, position, mode
+    " ", M.diagnostics(),
+    pill(filetype, "StatuslineLangPill"), " ",
+    pill("%l:%c  %P", "StatuslinePosPill"), " ",
+    pill(mode_label, mode_hl), " ",
   })
 end
 

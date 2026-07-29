@@ -93,6 +93,21 @@ ensure_tool fzf      "fzf"        fzf    fzf    fzf    fzf    fzf
 ensure_tool rg       "ripgrep"    ripgrep ripgrep ripgrep ripgrep ripgrep
 ensure_tool npm      "node + npm" nodejs nodejs nodejs node   nodejs
 
+# nvim-treesitter needs a *real* tree-sitter-cli 0.26+ to compile parsers.
+# Distro packages are usually far too old (Ubuntu/Debian ship 0.20.x) —
+# brew is the one place that reliably has a current version, so it's
+# special-cased here the same way lazygit is below.
+if have tree-sitter && [[ "$(tree-sitter --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)" > "0.25" ]]; then
+  skip "tree-sitter-cli already installed (0.26+)"
+elif have brew; then
+  printf '  Installing tree-sitter-cli via brew (distro packages are usually too old)...\n'
+  brew install tree-sitter-cli && ok "tree-sitter-cli installed" || warn "tree-sitter-cli install failed"
+else
+  warn "tree-sitter-cli 0.26+ not found and no brew available to install it."
+  warn "Install manually: https://github.com/tree-sitter/tree-sitter/blob/master/crates/cli/README.md"
+  warn "(distro apt/dnf packages are typically too old — this needs a real 0.26+)"
+fi
+
 # basedpyright/ruff (the Python LSP servers) install via Mason using
 # `python3 -m venv`. On Debian/Ubuntu, the venv module is a separate package
 # from python3 itself and its absence fails those two installs with a

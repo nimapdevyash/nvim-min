@@ -1,0 +1,31 @@
+return {
+  "stevearc/conform.nvim",
+  event = { "BufWritePre" },
+  cmd = { "ConformInfo" },
+  opts = {
+    formatters_by_ft = {
+      javascript = { "prettierd" },
+      typescript = { "prettierd" },
+      javascriptreact = { "prettierd" },
+      typescriptreact = { "prettierd" },
+      json = { "prettierd" },
+      jsonc = { "prettierd" },
+      yaml = { "prettierd" },
+      html = { "prettierd" },
+      css = { "prettierd" },
+      markdown = { "prettierd" },
+      graphql = { "prettierd" },
+      lua = { "stylua" },
+      sh = { "shfmt" },
+      bash = { "shfmt" },
+      python = { "ruff_format", "ruff_organize_imports" },
+      terraform = { "terraform_fmt" },
+      ["terraform-vars"] = { "terraform_fmt" },
+    },
+    format_on_save = {
+      timeout_ms = 1000,
+      lsp_format = "fallback",
+    },
+    notify_on_error = true,
+  },
+}

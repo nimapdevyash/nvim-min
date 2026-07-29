@@ -1,0 +1,20 @@
+return {
+  "lewis6991/gitsigns.nvim",
+  event = { "BufReadPre", "BufNewFile" },
+  opts = {
+    signs = {
+      add = { text = "│" },
+      change = { text = "│" },
+      delete = { text = "_" },
+      topdelete = { text = "‾" },
+      changedelete = { text = "~" },
+      untracked = { text = "┆" },
+    },
+    signcolumn = true,
+    numhl = false,
+    linehl = false,
+    current_line_blame = false, -- toggle on demand with <leader>gB, keeps things quiet by default
+    current_line_blame_opts = { delay = 300, virt_text_pos = "eol" },
+    preview_config = { border = "rounded" },
+  },
+}

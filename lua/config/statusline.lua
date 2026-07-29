@@ -1,12 +1,32 @@
--- Native statusline: no plugin, no icon font dependency. Wired via
+-- Native statusline: no plugin, no icon font dependency beyond the two
+-- Powerline "round" glyphs below (your terminal already renders these
+-- correctly — proven by the tmux bar this was modeled on). Wired via
 -- `vim.o.statusline` in options.lua. Re-evaluated on every statusline redraw,
 -- so keep this cheap — no LSP requests, just reads of already-cached state.
 --
--- Deliberately minimal: mode, filename, git branch, diagnostics (only when
--- present), filetype, cursor position. No LSP client list — that's what
--- <leader>ci (:checkhealth vim.lsp) is for, not something to show on every
--- keystroke.
+-- Deliberately minimal: mode + git branch as colored pills (like the tmux
+-- bar's branch/window pills), filename, diagnostics (only when present),
+-- filetype, cursor position. No LSP client list — that's what <leader>ci
+-- (:checkhealth vim.lsp) is for, not something to show on every keystroke.
 local M = {}
+
+-- ple-left_half_circle_thick / ple-right_half_circle_thick — verified
+-- against the Nerd Fonts glyph names, not guessed: U+E0B6 is the "(" shaped
+-- left cap, U+E0B4 the ")" shaped right cap.
+local PILL_LEFT = "\u{E0B6}"
+local PILL_RIGHT = "\u{E0B4}"
+
+--- @param text string
+--- @param hl_group string base highlight group name; hl_group.."Cap" must
+---   also exist (fg = this group's bg, bg = NONE) — see setup_highlights()
+local function pill(text, hl_group)
+  return table.concat({
+    "%#", hl_group, "Cap#", PILL_LEFT,
+    "%#", hl_group, "# ", text, " ",
+    "%#", hl_group, "Cap#", PILL_RIGHT,
+    "%*",
+  })
+end
 
 local MODES = {
   n = { "NORMAL", "StatuslineModeNormal" },
@@ -22,6 +42,18 @@ local MODES = {
   t = { "TERMINAL", "StatuslineModeTerminal" },
 }
 
+-- name -> onedark.colors palette key, used both to build the "Cap" variant
+-- and to iterate in setup_highlights() without repeating each group twice.
+local PILL_GROUPS = {
+  StatuslineModeNormal = "blue",
+  StatuslineModeInsert = "green",
+  StatuslineModeVisual = "purple",
+  StatuslineModeReplace = "red",
+  StatuslineModeCommand = "orange",
+  StatuslineModeTerminal = "cyan",
+  StatuslineGitPill = "green",
+}
+
 function M.mode()
   local raw = vim.api.nvim_get_mode().mode
   local entry = MODES[raw]
@@ -32,7 +64,7 @@ end
 -- Reuses gitsigns' own buffer-local state rather than shelling out to git again.
 function M.git()
   local head = vim.b.gitsigns_head
-  return (head and head ~= "") and ("%#StatuslineGit# " .. head .. " %*") or ""
+  return (head and head ~= "") and (" " .. pill(head, "StatuslineGitPill")) or ""
 end
 
 function M.diagnostics()
@@ -53,8 +85,8 @@ function M.render()
 
   local label, hl = M.mode()
   return table.concat({
-    "%#" .. hl .. "# " .. label .. " %*",
-    " %f%m%r",
+    " ", pill(label, hl),
+    " %#StatuslineFile#%f%m%r%*",
     M.git(),
     "%=",
     M.diagnostics(),
@@ -68,13 +100,15 @@ function M.setup_highlights()
 
   local function hl(name, opts) vim.api.nvim_set_hl(0, name, opts) end
 
-  hl("StatuslineModeNormal", { bg = colors.blue, fg = colors.bg0, bold = true })
-  hl("StatuslineModeInsert", { bg = colors.green, fg = colors.bg0, bold = true })
-  hl("StatuslineModeVisual", { bg = colors.purple, fg = colors.bg0, bold = true })
-  hl("StatuslineModeReplace", { bg = colors.red, fg = colors.bg0, bold = true })
-  hl("StatuslineModeCommand", { bg = colors.orange, fg = colors.bg0, bold = true })
-  hl("StatuslineModeTerminal", { bg = colors.cyan, fg = colors.bg0, bold = true })
-  hl("StatuslineGit", { fg = colors.orange })
+  for group, color_key in pairs(PILL_GROUPS) do
+    local color = colors[color_key]
+    hl(group, { bg = color, fg = colors.bg0, bold = true })
+    -- the cap's "outer" side is NONE to match the theme's transparent
+    -- background — the terminal's own bg shows through, same as everywhere else
+    hl(group .. "Cap", { fg = color, bg = "NONE" })
+  end
+
+  hl("StatuslineFile", { fg = colors.fg })
   hl("StatuslineDiagError", { fg = colors.red })
   hl("StatuslineDiagWarn", { fg = colors.yellow })
   hl("StatuslineMuted", { fg = colors.grey })

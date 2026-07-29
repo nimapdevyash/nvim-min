@@ -50,6 +50,12 @@ map("n", "<C-Up>", "<cmd>resize +2<cr>", d("Increase window height"))
 map("n", "<C-Down>", "<cmd>resize -2<cr>", d("Decrease window height"))
 map("n", "<C-Left>", "<cmd>vertical resize -2<cr>", d("Decrease window width"))
 map("n", "<C-Right>", "<cmd>vertical resize +2<cr>", d("Increase window width"))
+-- Same resizes, hjkl-shaped (needs a terminal that distinguishes Ctrl+Shift
+-- from Ctrl — kitty does, via its keyboard protocol)
+map("n", "<C-S-h>", "<cmd>vertical resize -2<cr>", d("Shrink window width"))
+map("n", "<C-S-l>", "<cmd>vertical resize +2<cr>", d("Grow window width"))
+map("n", "<C-S-j>", "<cmd>resize -2<cr>", d("Shrink window height"))
+map("n", "<C-S-k>", "<cmd>resize +2<cr>", d("Grow window height"))
 
 -- ── Buffers / tabs ───────────────────────────────────────────────────────────
 map("n", "<S-l>", "<cmd>bnext<cr>", d("Next buffer"))
@@ -144,3 +150,11 @@ map("n", "<leader>ox", function() require("config.external").open_externally() e
   d("Open file under cursor in the OS default app"))
 map("n", "<leader>oi", function() require("config.external").preview_in_terminal() end,
   d("Preview image/SVG inline (kitten icat, else OS default app)"))
+
+-- ── Harpoon-style file marks (numbered, persisted per-project) ──────────────
+map("n", "<leader>ma", function() require("config.harpoon").add() end, d("Mark current file"))
+map("n", "<leader>md", function() require("config.harpoon").remove() end, d("Unmark current file"))
+map("n", "<leader>ml", function() require("config.harpoon").list() end, d("List/search marks"))
+for i = 1, 9 do
+  map("n", "<leader>" .. i, function() require("config.harpoon").jump(i) end, d("Jump to mark " .. i))
+end

@@ -11,8 +11,13 @@ return {
   },
   {
     "stevearc/oil.nvim",
-    cmd = "Oil",
-    keys = { "-", "<leader>e" },
+    -- oil's own README is explicit: "Lazy loading is not recommended because
+    -- it is very tricky to make it work correctly in all situations" — this
+    -- was exactly the cause of `<leader>e`/`:Oil` intermittently not working
+    -- (default_file_explorer needs oil's netrw-override autocmds active
+    -- *before* you ever open a directory, which a cmd/keys-triggered lazy
+    -- load can't guarantee). Oil is tiny; eager-loading it costs nothing.
+    lazy = false,
     opts = {
       default_file_explorer = true,
       view_options = { show_hidden = true },

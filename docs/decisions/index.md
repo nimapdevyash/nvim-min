@@ -449,3 +449,106 @@ statusline look different from another's under `laststatus = 3`.
 **Alternatives considered.** `laststatus = 2` (a statusline per window) would make window-local
 overrides work normally, but it was chosen deliberately as `3` from the start for the cleaner
 single-bar look with splits — not worth reversing for this.
+
+---
+
+## Statusline pills use Powerline glyphs, verified before use {#statusline-pills}
+
+**Decision.** Render the mode and git-branch segments as rounded "pill" capsules using the
+Powerline Extra Symbols `ple-left_half_circle_thick` (`U+E0B6`) and `ple-right_half_circle_thick`
+(`U+E0B4`), each pill's outer edge colored to match its fill and `bg = "NONE"` so it floats on the
+theme's transparent background — directly modeled on the tmux status bar screenshot that prompted
+this.
+
+**Context.** These are Nerd Font Private Use Area glyphs — the exact category of icon-font
+dependency this config deliberately avoided when `mini.icons` was cut (see the native
+statusline/dashboard decision above). The difference here: the *user's own terminal* was already
+proven to render these glyphs correctly, because the reference screenshot's tmux bar uses the same
+glyph family. Depending on a font the environment demonstrably already has is a different call
+than adding a new hard requirement nothing previously needed.
+
+**Verified, not guessed, before using them.** Powerline separator glyphs are easy to get backwards
+(there are visually similar codepoints for hard/pointed vs. round, and left vs. right variants of
+each). Checked the canonical Nerd Fonts `glyphnames.json` for the exact name/codepoint mapping
+(`ple-left_half_circle_thick` = `U+E0B6`, `ple-right_half_circle_thick` = `U+E0B4`) rather than
+recalling it from memory, then confirmed the rendered statusline string contained the exact
+expected UTF-8 byte sequences (`0xEE 0x82 0xB6` and `0xEE 0x82 0xB4`) via
+`vim.api.nvim_eval_statusline()` before considering it done.
+
+---
+
+## Oil.nvim must not be lazy-loaded {#oil-eager}
+
+**Decision.** Set `lazy = false` on oil.nvim's plugin spec, removing the `cmd`/`keys`-based lazy
+triggers it had before.
+
+**Context.** Reported bug: `<leader>e` and `:Oil` intermittently didn't work. Root cause was in
+oil.nvim's own README, not a bug in this config's keymaps: *"Lazy loading is not recommended
+because it is very tricky to make it work correctly in all situations"* — `default_file_explorer
+= true` needs oil's netrw-override autocmds registered before you ever open a directory, which a
+`cmd`/`keys`-triggered lazy load can't guarantee happens in time. Oil is small; eager-loading it
+costs nothing meaningful at startup. This is a case where a plugin's *own* documentation
+explicitly overrides this config's general "lazy-load everything that can be" default —
+worth checking a plugin's install instructions for an explicit anti-recommendation like this
+before assuming lazy-loading is always the right call.
+
+---
+
+## Mason stops retrying basedpyright/ruff when `python3-venv` is missing {#mason-venv-skip}
+
+**Decision.** Check once, at LSP setup time, whether `python3 -c "import venv"` succeeds; only add
+`basedpyright`/`ruff` to `ensure_installed` if it does. If not, skip both and show one clear
+`vim.notify` explaining exactly what to install, instead of letting Mason retry-and-fail them on
+every single launch.
+
+**Context.** This dependency was already documented (see the Requirements sections in
+`README.md`/`docs/guide/getting-started.md`) and `install.sh` already checks for it — but a user
+who launches nvim without having run `install.sh` (or on a machine where the `apt-get` step
+silently failed) would see a scary, uninformative red error — `[mason-lspconfig.nvim] failed to
+install ruff. Installation logs are available in :Mason and :MasonLog` — on *every single launch*,
+since mason-lspconfig has no memory of "I already tried this and it doesn't work here." That's
+wasted network/CPU on every startup plus an alarming message that gives no indication of what's
+actually wrong or how to fix it. Checking once and explaining the real cause is strictly better
+than either silently swallowing the failure or letting it repeat forever.
+
+---
+
+## Blink.cmp tuned for latency, LSP debounce lowered {#completion-speed}
+
+**Decision.** Set `completion.trigger.show_on_insert = true` in blink.cmp (show suggestions the
+moment you enter insert mode, not just after the first keystroke), and lower
+`flags.debounce_text_changes` from Neovim's own 150ms default to 15ms across every LSP client.
+
+**Context.** Explicit priority: "I rely heavily on the auto-complete suggestions... I want them to
+be precise and as fast as possible." blink.cmp's own defaults are already close to optimal —
+`menu.auto_show_delay_ms = 0`, the Rust fuzzy matcher (0.5–4ms/keystroke), and `frecency`/
+`use_proximity` (both on by default) already handle "precise" by ranking your actual usage
+patterns and nearby-word matches higher. The one real lever left was `debounce_text_changes`,
+which controls how long Neovim waits after a keystroke before telling the LSP server about it at
+all — 150ms is a sensible default for general responsiveness, but it directly adds to how long a
+completion request takes to even start when it's the thing you interact with the most. This is a
+deliberate, explained override of the earlier ["semantic tokens
+off"](#semantic-tokens) decision's stance that Neovim's own default was fine as-is — that
+decision optimized for "don't do unnecessary work"; this one optimizes for "the primary workflow's
+answers should be as fast as possible," a different priority the user stated explicitly, not a
+contradiction that was missed.
+
+---
+
+## Harpoon-style file marks, no plugin {#harpoon}
+
+**Decision.** `lua/config/harpoon.lua`: a numbered, per-project-persisted list of marked file
+paths, stored as JSON at `stdpath("state") .. "/harpoon/<sha256 of cwd>.json"` — `<leader>ma` to
+mark, `<leader>1`–`<leader>9` to jump straight to a slot, `<leader>ml` for a fuzzy-searchable list
+(via `fzf-lua.fzf_exec` — "searchable" for free, no picker UI to hand-build).
+
+**Context.** Explicit ask, harpoon.nvim named directly as the reference: numbered marks with
+instant jump, distinct from just cycling recently-used buffers (`vim.v.oldfiles`/`<leader>fr`
+already cover that). The persistence design intentionally matches real harpoon.nvim's own
+behavior — marks survive restarts, scoped per-project via a hash of `cwd` — rather than a
+session-only imitation that resets every launch, since "pin these exact files and always jump to
+them" is the actual value harpoon provides, not just numbered recency.
+
+**Alternatives considered.** Session-only (in-memory, no persistence) — simpler, but loses the
+main reason to reach for numbered marks over the buffer list in the first place: they're supposed
+to stay put.

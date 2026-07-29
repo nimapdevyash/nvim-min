@@ -42,6 +42,7 @@ Leader is `<space>`.
 | `<leader>se` | Equalize window sizes |
 | `<leader>sx` | Close split |
 | `<C-Up/Down/Left/Right>` | Resize window |
+| `<C-S-h/j/k/l>` | Resize window (shrink width / shrink height / grow height / grow width) — same as above, hjkl-shaped |
 
 ## Buffers
 
@@ -50,6 +51,17 @@ Leader is `<space>`.
 | `<S-l>` / `<S-h>` | Next / previous buffer |
 | `<leader>bd` | Delete buffer |
 | `<leader>bo` | Delete all other buffers |
+
+## File marks (harpoon-style, no plugin)
+
+Numbered, persisted per-project (keyed by cwd, survives restarts) — see `lua/config/harpoon.lua`.
+
+| Key | Action |
+|---|---|
+| `<leader>ma` | Mark the current file |
+| `<leader>md` | Unmark the current file |
+| `<leader>ml` | List marks, fuzzy-searchable (fzf-lua) — `<cr>` jumps, `<C-x>` removes |
+| `<leader>1` – `<leader>9` | Jump straight to that numbered mark |
 
 ## Find (fzf-lua)
 

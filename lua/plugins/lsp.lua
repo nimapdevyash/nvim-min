@@ -83,9 +83,15 @@ return {
       -- Don't recompute diagnostics on every keystroke — big win on large TS files
       vim.diagnostic.config({ update_in_insert = false })
 
-      -- Apply blink.cmp's capabilities to every server
+      -- Apply blink.cmp's capabilities to every server. Text-change debounce
+      -- is dropped from Neovim's own 150ms default to 15ms: completion
+      -- accuracy/speed was called out as the top priority, and this is what
+      -- actually controls how soon the server sees your latest keystroke —
+      -- blink's own menu overhead is already sub-5ms, so the LSP round-trip
+      -- is where the perceptible latency actually lives.
       vim.lsp.config("*", {
         capabilities = require("blink.cmp").get_lsp_capabilities(),
+        flags = { debounce_text_changes = 15 },
       })
 
       -- ---- Per-server overrides (only where the defaults aren't enough) ----
@@ -163,12 +169,37 @@ return {
 
       -- ---- Install + enable ---- (mason.nvim itself is set up by its own plugin spec)
       mason_ensure_installed({ "prettierd", "stylua", "shfmt" })
+
+      local ensure_installed = {
+        "vtsls", "eslint", "html", "cssls", "tailwindcss", "jsonls", "yamlls",
+        "lua_ls", "bashls", "dockerls", "docker_compose_language_service",
+        "terraformls", "marksman",
+      }
+
+      -- basedpyright/ruff install via `python3 -m venv`; on Debian/Ubuntu the
+      -- venv module is a separate package (python3-venv) from python3 itself,
+      -- and its absence makes Mason retry-and-fail these two on every single
+      -- launch with a scary red error ("failed to install ruff..."). Check
+      -- once and skip them with one clear, actionable message instead of a
+      -- recurring one that just looks broken.
+      local has_venv = vim.fn.executable("python3") == 1
+      if has_venv then
+        vim.fn.system({ "python3", "-c", "import venv" })
+        has_venv = vim.v.shell_error == 0
+      end
+      if has_venv then
+        vim.list_extend(ensure_installed, { "basedpyright", "ruff" })
+      else
+        vim.notify(
+          "Skipping basedpyright/ruff — python3's venv module isn't available.\n"
+            .. "Debian/Ubuntu: sudo apt-get install python3-venv (or python3.X-venv), then restart nvim.",
+          vim.log.levels.WARN,
+          { title = "nvim-min" }
+        )
+      end
+
       require("mason-lspconfig").setup({
-        ensure_installed = {
-          "vtsls", "eslint", "html", "cssls", "tailwindcss", "jsonls", "yamlls",
-          "lua_ls", "basedpyright", "ruff", "bashls", "dockerls",
-          "docker_compose_language_service", "terraformls", "marksman",
-        },
+        ensure_installed = ensure_installed,
         -- automatic_enable scans ALL installed mason packages, not just the
         -- ensure_installed list above — stylua also ships an lspconfig entry
         -- (its own `--lsp` formatting-only mode), so without this exclusion

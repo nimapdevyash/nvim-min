@@ -6,9 +6,12 @@ readable mirror of it — if they ever drift, the Lua file wins.
 There's no which-key popup by design (it adds a plugin, an on-keypress popup, and load-time
 overhead you don't need once these are muscle memory). Instead:
 
-- `<leader>?` — fuzzy-search **every** live keymap (via fzf-lua, always accurate, shows source)
-- `<leader>fK` — grep the raw `keymaps.lua` source
-- `:h {motion}` — Neovim's own help, for anything built-in (`y`, `d`, `ci"`, etc.)
+| Key | Action |
+|---|---|
+| `<leader>?` | Fuzzy-search **every** live keymap (via fzf-lua, always accurate, shows source) |
+| `<leader>fK` | Grep the raw `keymaps.lua` / `lua/config` source |
+
+Plus `:h {motion}` — Neovim's own help, for anything built-in (`y`, `d`, `ci"`, etc.)
 
 Leader is `<space>`.
 
@@ -17,7 +20,7 @@ Leader is `<space>`.
 | Key | Action |
 |---|---|
 | `<Esc>` | Clear search highlight |
-| `jk` | Exit insert mode |
+| `jk` (insert) | Exit insert mode |
 | `<leader>w` | Save file |
 | `<leader>W` | Save all files |
 | `<leader>q` | Quit window |
@@ -25,6 +28,7 @@ Leader is `<space>`.
 | `x` | Delete char without yanking |
 | `<leader>y` / `<leader>Y` | Yank to system clipboard (selection / line) |
 | `<leader>p` | Paste without overwriting the register |
+| `J` | Join line, keep cursor position |
 | `J` / `K` (visual) | Move selection down / up |
 | `<` / `>` (visual) | Indent, keep selection |
 
@@ -125,6 +129,7 @@ Leader is `<space>`.
 | `<leader>ac` | Actions palette |
 | `<leader>aA` (visual) | Add selection to chat |
 | `<leader>ai` | Inline prompt (type a task, `<cr>`) |
+| `<leader>ax` | Close chat input (stop insert, leave chat buffer open) |
 
 ## AI ghost text (minuet-ai, Gemini)
 

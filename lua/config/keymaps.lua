@@ -3,7 +3,6 @@
 --   <leader>?   fuzzy-search every keymap (live, via fzf-lua, always accurate)
 --   <leader>fK  grep this exact file
 local map = vim.keymap.set
-local silent = { silent = true }
 
 local function d(desc)
   return { desc = desc, silent = true }

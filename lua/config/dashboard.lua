@@ -1,7 +1,7 @@
 -- Native start screen, no plugin (no alpha.nvim / dashboard.nvim / snacks).
 -- Shown once on VimEnter when nvim opens with no file arguments, exactly
--- like those plugins — built from a scratch buffer + vim.v.oldfiles +
--- lazy.nvim's own stats API, nothing else.
+-- like those plugins — built from a scratch buffer + vim.v.oldfiles, nothing
+-- else.
 local M = {}
 
 -- figlet -f doom YASH, trailing whitespace trimmed, verified byte-for-byte
@@ -15,6 +15,16 @@ local LOGO = {
 }
 
 local TAGLINE = "nvim-min · MERN + DevOps + Gen AI"
+
+-- Extensible on purpose — add more here and the random pick below just works.
+local SLOGANS = {
+  { text = "वीरभोग्या वसुन्धरा", sub = "Vīrabhogyā Vasundharā — the earth is enjoyed by the brave" },
+}
+
+math.randomseed(vim.uv.hrtime())
+local function pick_slogan()
+  return SLOGANS[math.random(#SLOGANS)]
+end
 
 --- Buffer-local action, bound to a single key on the dashboard buffer.
 ---@type {key: string, desc: string, action: fun()}[]
@@ -107,14 +117,13 @@ function M.open()
     table.insert(keymap_lines, { line = #lines - 1, key = ACTIONS[i].key, action = ACTIONS[i].action })
   end
 
-  local stats = require("lazy").stats()
+  local slogan = pick_slogan()
   table.insert(lines, "")
   table.insert(lines, "")
-  table.insert(
-    lines,
-    center(string.format("%d plugins loaded in %dms", stats.loaded, stats.startuptime), win_width)
-  )
-  table.insert(highlights, { line = #lines - 1, hl_group = "DashboardFooter" })
+  table.insert(lines, center(slogan.text, win_width))
+  table.insert(highlights, { line = #lines - 1, hl_group = "DashboardSlogan" })
+  table.insert(lines, center(slogan.sub, win_width))
+  table.insert(highlights, { line = #lines - 1, hl_group = "DashboardSloganSub" })
 
   local top_pad = math.max(0, math.floor((win_height - #lines) / 2) - 2)
   for _ = 1, top_pad do
@@ -141,6 +150,9 @@ function M.open()
   vim.wo.signcolumn = "no"
   vim.wo.cursorline = false
   vim.wo.statuscolumn = ""
+  -- hide the trailing ~ end-of-buffer markers below the content — a stack of
+  -- them under a dashboard reads as visual clutter, not a real editing view
+  vim.opt_local.fillchars:append({ eob = " " })
 
   local ns = vim.api.nvim_create_namespace("dashboard")
   for _, h in ipairs(highlights) do
@@ -166,7 +178,8 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, "DashboardLogo", { link = "Title", default = true })
   vim.api.nvim_set_hl(0, "DashboardTagline", { link = "Comment", default = true })
   vim.api.nvim_set_hl(0, "DashboardHeading", { link = "Function", bold = true, default = true })
-  vim.api.nvim_set_hl(0, "DashboardFooter", { link = "Comment", default = true })
+  vim.api.nvim_set_hl(0, "DashboardSlogan", { link = "String", bold = true, default = true })
+  vim.api.nvim_set_hl(0, "DashboardSloganSub", { link = "Comment", italic = true, default = true })
 end
 
 return M

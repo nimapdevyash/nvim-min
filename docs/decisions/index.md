@@ -410,3 +410,42 @@ being installed, but zero risk of a hand-typed alignment bug either.
 **Alternatives considered.** `snacks.nvim`'s dashboard module — genuinely nice, but it's one
 module of a much larger multi-purpose plugin; pulling in the whole thing for a start screen fails
 the same "does this need a plugin" bar as everything else here.
+
+---
+
+## Statusline redesign: theme-derived colors, hidden on the dashboard, no LSP client list {#statusline-v2}
+
+**Decision.** Give the native statusline (`lua/config/statusline.lua`) real color: a per-mode
+colored "pill" (bg color from `require("onedark.colors")`, so it always matches whichever onedark
+style is active) plus colored git-branch/diagnostic text. Drop the LSP client-name list entirely.
+Blank the statusline completely while on the dashboard. Replace the dashboard's
+`require("lazy").stats()` footer ("N plugins loaded in Xms") with a rotating slogan.
+
+**Context.** Explicit feedback after seeing the dashboard rendered: the bottom line showed
+`[Scratch][-] ... [dashboard]  20:1  All` — visibly wrong, and the ask was for something "minimal
+yet very useful and effective" with git branch, plus for it to disappear entirely on the
+dashboard. Also asked to replace the plugin-count footer with a Sanskrit slogan
+("वीरभोग्या वसुन्धरा" / *Vīrabhogyā Vasundharā* — "the earth is enjoyed by the brave"), given in
+full rather than abbreviated. `SLOGANS` in `lua/config/dashboard.lua` is a list (currently one
+entry) specifically so more can be added later without restructuring anything.
+
+**Root cause of the `[Scratch]` bug:** `%f` genuinely renders as `[Scratch]` for an unnamed
+`buftype=nofile` buffer (confirmed with `vim.api.nvim_eval_statusline()`, which evaluates a
+statusline expression to its final text — the right tool for checking what a statusline will
+actually show, rather than reasoning about it from the format string alone). `%m` showed `[-]`
+because the dashboard buffer is `modifiable = false` (that flag means "not modifiable", not
+"unmodified"). Neither was a bug in the render function; the function just had no reason to know
+it was looking at a special buffer, so it rendered the generic file-info format for it too.
+
+**A genuinely non-obvious Neovim behavior this surfaced:** with `laststatus = 3` (one global
+statusline for the whole tabpage, set in `lua/config/options.lua`), there is no such thing as a
+true per-window statusline override anymore — confirmed by setting `vim.wo.statusline` in one
+window and observing `vim.o.statusline` (the *global* value) change too. So "hide the statusline
+only on the dashboard window" cannot be done by setting a window-local option; it has to be done
+inside `render()` itself, which already runs fresh on every redraw and can check
+`vim.bo.filetype == "dashboard"` directly. This is the only correct way to make one buffer's
+statusline look different from another's under `laststatus = 3`.
+
+**Alternatives considered.** `laststatus = 2` (a statusline per window) would make window-local
+overrides work normally, but it was chosen deliberately as `3` from the start for the cleaner
+single-bar look with splits — not worth reversing for this.

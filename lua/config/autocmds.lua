@@ -57,14 +57,23 @@ autocmd("TermOpen", {
   end,
 })
 
+-- Theme-derived highlights for the native statusline and dashboard. Applied
+-- once immediately (autocmds.lua loads after colorscheme.lua, so onedark is
+-- already active by this point) and again on every future :colorscheme
+-- change.
+local function setup_theme_highlights()
+  require("config.statusline").setup_highlights()
+  require("config.dashboard").setup_highlights()
+end
+setup_theme_highlights()
+autocmd("ColorScheme", {
+  group = augroup("theme_highlights", { clear = true }),
+  callback = setup_theme_highlights,
+})
+
 -- Native start screen (see lua/config/dashboard.lua) — only when nvim opens
 -- with no file args into an empty, unnamed, unmodified buffer (i.e. not
 -- `nvim file.txt`, not restoring a session, not reading from a pipe).
-require("config.dashboard").setup_highlights()
-autocmd("ColorScheme", {
-  group = augroup("dashboard_highlights", { clear = true }),
-  callback = function() require("config.dashboard").setup_highlights() end,
-})
 autocmd("VimEnter", {
   group = augroup("dashboard_open", { clear = true }),
   callback = function()

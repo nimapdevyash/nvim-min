@@ -95,11 +95,11 @@ function M.render()
     " ", M.git(),
     " %#StatuslineFile#%f%m%r%*",
     "%=",
-    -- right zone: diagnostics, language, position, mode
-    " ", M.diagnostics(),
+    -- right zone: mode, language, then everything else
+    " ", pill(mode_label, mode_hl), " ",
     pill(filetype, "StatuslineLangPill"), " ",
+    M.diagnostics(),
     pill("%l:%c  %P", "StatuslinePosPill"), " ",
-    pill(mode_label, mode_hl), " ",
   })
 end
 

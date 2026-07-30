@@ -29,6 +29,11 @@ o.wrap = false
 o.list = true
 o.listchars = { tab = "» ", trail = "·", nbsp = "␣" }
 o.showmode = false
+-- 0 collapses the classic bottom cmdline row entirely — safe only because
+-- lua/plugins/ui.lua's noice.nvim renders cmdline input and messages in
+-- floating popups instead; without that plugin this would silently eat
+-- every ":command" prompt, search prompt, and echo message.
+o.cmdheight = 0
 o.laststatus = 3
 o.statusline = "%!v:lua.require'config.statusline'.render()"
 o.pumheight = 10

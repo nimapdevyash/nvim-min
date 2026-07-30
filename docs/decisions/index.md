@@ -676,3 +676,49 @@ rendering with conjuncts/vowel signs visibly out of order. Since the translitera
 carries the full meaning on its own, and terminal Unicode/font support can't be reliably detected
 from within Neovim to conditionally show one or the other, removing the script line entirely is
 the simplest fix that's correct on every terminal rather than correct on some.
+
+---
+
+## Floating cmdline/messages via noice.nvim, not a hand-rolled `vim.ui_attach` {#noice}
+
+**Decision.** Add `folke/noice.nvim` (+ its one real dependency, `MunifTanjim/nui.nvim`) in
+`lua/plugins/ui.lua`, configured narrowly: only `cmdline` and `messages` are taken over (view
+`cmdline_popup` for the former, `mini` for the latter — `mini` specifically so a second dependency,
+`nvim-notify`, isn't needed just for a nicer notify view). `lsp.hover`/`lsp.signature` are
+explicitly disabled in its config, since this config already has working native bindings for both
+(`K`/`<C-k>` in `lua/plugins/lsp.lua`, blink.cmp's own signature window in
+`lua/plugins/completion.lua`) — letting noice take those over too would just mean two plugins
+fighting over the same UI. Paired with `o.cmdheight = 0` in `lua/config/options.lua`, so the
+classic bottom row collapses entirely instead of sitting empty behind the floating popup.
+
+**Context.** The classic bottom-of-screen cmdline/message row (`:command` input, `"file" NL, NB
+written` confirmations) was the one piece of chrome this config hadn't addressed, and the
+requested reference point was LazyVim's floating cmdline — which *is* noice.nvim under the hood.
+The other option considered was hand-rolling this directly against Neovim's own
+`vim.ui_attach({ ext_cmdline = true, ext_messages = true }, ...)` API, in keeping with this
+config's general "prefer native over a plugin" bias (see principle #1 in CLAUDE.md, and
+`lua/config/statusline.lua`/`terminal.lua` as precedent). That bias holds for cmdline input alone —
+narrow, well-scoped — but full message-subsystem parity is a much bigger surface than it looks:
+`confirm()` y/n dialogs, the `--More--` pager, multi-line `:messages` history, swap-file recovery
+prompts, and macro-recording indicators all route through the same mechanism, and getting any one
+of them wrong risks the editor appearing to hang waiting for a keystroke the user can't see (no
+visible prompt) — exactly the kind of subtle failure principle #7 ("config must survive being
+deleted or corrupted") and this project's general reliability bar exist to avoid. noice.nvim has
+already had years of exactly these edge cases reported and fixed upstream; reimplementing that
+surface from scratch for this config would be effort spent re-discovering already-solved bugs, not
+a genuine capability gain — the "hand-rolled native replacement would be a real net loss" carve-out
+principle #1 itself allows for.
+
+**Performance.** `vim.ui_attach` is event-driven — it only fires when the cmdline or a message
+actually changes, so there's no per-keystroke or idle cost while editing normally; it doesn't touch
+the treesitter/LSP/completion path this config has otherwise been tuned for. The two real costs are
+a modest one-time plugin load (mitigated by `event = "VeryLazy"`) and a small floating-window paint
+each time a message/cmdline updates — the same class of cost blink.cmp's own popup menu already
+pays, and not perceptible in practice.
+
+**Verified.** A real PTY-driven interactive test (typing `:`, then `:w`, in an actual attached
+terminal) confirmed the cmdline renders as a bordered floating "Cmdline" popup, and the write
+confirmation renders as a small transient popup rather than the old flush-left bottom line.
+
+---
+

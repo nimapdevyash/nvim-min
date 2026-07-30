@@ -124,10 +124,20 @@ venv_has_pip() {
   return $result
 }
 
-if have python3; then
-  if venv_has_pip; then
-    skip "python3 venv + pip already working"
-  elif [[ "$PKG" == "apt" ]]; then
+if venv_has_pip; then
+  skip "python3 venv + pip already working"
+elif have brew; then
+  # Preferred even on apt/dnf systems: confirmed in practice that some
+  # distro Python builds ship with ensurepip deliberately stripped out,
+  # which apt installing python3-venv/python3-pip does not fix (the venv
+  # module and pip package show up, but ensurepip inside a *created* venv
+  # is still broken) — brew's Python doesn't have this problem, and
+  # brew's bin dir is already ahead of /usr/bin on PATH so it's picked up
+  # automatically, no shell config changes needed.
+  printf '  Installing python3 via brew (working venv+pip, needed for basedpyright/ruff)...\n'
+  brew install python@3.14 && ok "python3 (brew) installed" || warn "brew python install failed"
+elif have python3; then
+  if [[ "$PKG" == "apt" ]]; then
     py_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
     printf '  Installing python3-venv + python3-pip (needed for basedpyright/ruff)...\n'
     if sudo apt-get install -y "python${py_minor}-venv" python3-pip 2>/dev/null || sudo apt-get install -y python3-venv python3-pip; then

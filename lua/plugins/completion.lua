@@ -3,7 +3,23 @@ return {
   version = "1.*", -- pin to stable v1 (v2 is a moving target); ships prebuilt binaries, no build step
   event = "InsertEnter",
   opts = {
-    keymap = { preset = "super-tab" }, -- <Tab>/<S-Tab> select + snippet jump, <CR> accept, <C-e> close
+    keymap = {
+      preset = "super-tab", -- <S-Tab>/<Up>/<Down>/<C-n>/<C-p>/<C-b>/<C-f>/<C-k>/<C-e>/<C-space>
+      -- <Tab> and <CR> accept are handled entirely by lua/config/keymaps.lua
+      -- instead of here — see docs/decisions/index.md#blink-expr-mapping-bug.
+      -- blink's own keymap system always registers insert-mode mappings as
+      -- Neovim `expr` mappings (see saghen/blink.cmp's keymap/apply.lua),
+      -- which run under `textlock`; in this environment,
+      -- `require('blink.cmp').is_visible()` reliably reads back stale/false
+      -- specifically when called from inside that restricted evaluation
+      -- context, even though the exact same call from a plain callback reads
+      -- correctly — so accept silently never fires and Tab/Enter just insert
+      -- themselves. Setting both to `false` here stops blink from installing
+      -- its own (non-functional) mapping for them at all, so there's only
+      -- ever one mapping in play for each key.
+      ["<Tab>"] = false,
+      ["<CR>"] = false,
+    },
     appearance = { nerd_font_variant = "mono" },
     completion = {
       documentation = { auto_show = true, auto_show_delay_ms = 200 },

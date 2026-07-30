@@ -722,3 +722,59 @@ confirmation renders as a small transient popup rather than the old flush-left b
 
 ---
 
+
+---
+
+## blink.cmp's own `<Tab>`/`<CR>` mapping is unreliable — it's an `expr` mapping, evaluated under `textlock` {#blink-expr-mapping-bug}
+
+**Decision.** Disable blink.cmp's own `<Tab>`/`<CR>` keymap entries (`["<Tab>"] = false`,
+`["<CR>"] = false` in `lua/plugins/completion.lua`'s `keymap` config) and replace both with plain
+(non-`expr`) mappings in `lua/config/keymaps.lua`: `accept_or_fallback(key)` calls
+`blink.cmp`'s `snippet_active`/`accept`/`is_visible`/`select_and_accept`/`snippet_forward`
+directly, falling through to ghost-text acceptance (`<Tab>` only) or a normal keypress via
+`nvim_feedkeys` if nothing else applies.
+
+**Context.** blink.cmp's own README-documented `keymap` presets (including `super-tab`) install
+their accept/select mappings as Neovim `expr` mappings — meaning Neovim evaluates the mapping's
+return value under `textlock` (the same restricted-evaluation context `expr`-mappings and some
+autocmds run in). In this environment, `require('blink.cmp').is_visible()` reliably reports
+stale/false specifically when called from *inside* that `textlock` context, even though the exact
+same call from a plain (non-`expr`) keymap callback reads correctly — confirmed by testing both
+call sites side by side, not assumed from blink's docs alone. The practical symptom: pressing
+`<Tab>`/`<CR>` while a completion menu was visible would silently do nothing but insert a literal
+tab/newline, as if no completion was showing at all.
+
+**Why a second mapping instead of patching blink's own.** blink.cmp's `keymap` config doesn't
+expose a way to request a non-`expr` mapping for its built-in presets — the `expr` behavior is
+baked into how the preset installs itself. Disabling blink's own `<Tab>`/`<CR>` entries entirely
+and mapping them directly in `keymaps.lua` (a plain callback, not `expr`) sidesteps the `textlock`
+restriction altogether, since `vim.keymap.set` without `expr = true` runs in a normal execution
+context. `completion.lua` setting both to `false` ensures there's only ever one mapping in play per
+key — no risk of the two fighting over the same keypress.
+
+**Alternatives considered.** Filing/waiting on an upstream fix — the `textlock` restriction on
+`expr` mappings is a Neovim core behavior blink.cmp's preset runs into, not a bug in blink.cmp
+itself to fix; a plain mapping on this config's own side is the correct place to work around it
+regardless of upstream. Using `vim.schedule` inside the `expr` mapping to defer the
+`is_visible()` check outside `textlock` — `expr` mappings must return a string synchronously, so
+there's no way to defer part of the evaluation and still produce a valid return value in time.
+## oil.nvim's own `q` isn't bound to close by default {#oil-q-close}
+
+**Decision.** Add `["q"] = "actions.close"` to oil's `keymaps` table in `lua/plugins/editor.lua`.
+
+**Context.** Oil replaces the *current buffer* with a directory listing rather than opening a
+sidebar/split (this is deliberate upstream behavior, not a bug — see [the eager-loading
+entry](#oil-eager) for why that same design choice mattered for lazy-loading too). Because there's
+no separate window, `:q` while inside Oil closes that window like any other — and if it's the last
+window, quits Neovim entirely, with no confirmation. Oil's own default keymap for "leave without
+picking a file" is `<C-c>`, not `q` — but `q` is the convention every *other* file-explorer-ish
+plugin (NvimTree, neo-tree, fugitive, `:messages`, help buffers) trains you to reach for, making it
+an easy trap: press `<leader>e`, decide not to pick a file, reach for the muscle-memory `q`, get
+nothing, try `:q` instead, and quit the whole editor. Binding `q` to oil's own `actions.close`
+closes the gap without touching `<C-c>`, which still works as before.
+
+**Verified.** A real PTY-driven interactive test (`<leader>e` to open Oil, `q` to close) confirmed
+it returns to the previous buffer with Neovim still running, rather than quitting.
+
+---
+

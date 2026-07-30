@@ -126,22 +126,42 @@ map("v", "<leader>aA", "<cmd>CodeCompanionChat Add<cr>", d("AI: add selection to
 map({ "n", "v" }, "<leader>ai", ":CodeCompanion ", { desc = "AI: inline prompt (type task, <cr>)" })
 map("n", "<leader>ax", "<cmd>CodeCompanionChat Toggle<cr><cmd>stopinsert<cr>", d("AI: close chat input"))
 
--- Ghost text (minuet-ai): whole-suggestion accept lives on <Tab>, chained
--- through blink.cmp's own <Tab> fallback (verified against blink's keymap
--- source — a global, non-buffer-local <i> mapping is re-resolved dynamically
--- on every fallback call, so load order here doesn't matter). Other actions
--- (accept one line, cycle, dismiss) are bound directly by minuet itself in
--- lua/plugins/ai.lua, since those keys don't conflict with anything.
-map("i", "<Tab>", function()
-  if ghost_text_enabled then
-    local ok, minuet = pcall(require, "minuet.virtualtext")
-    if ok and minuet.action.is_visible() then
-      minuet.action.accept()
-      return ""
+-- <Tab>/<CR> accept blink.cmp's completion, then fall through to snippet-jump,
+-- ghost text (minuet-ai), or a normal Tab/Enter. This duplicates what
+-- completion.lua's blink.cmp `keymap` preset would otherwise do — see
+-- docs/decisions/index.md#blink-expr-mapping-bug for why: blink's own
+-- built-in mapping is an *expr* mapping (Neovim evaluates those under
+-- `textlock`), and `require('blink.cmp').is_visible()` reliably reads back
+-- stale/false specifically inside that restricted evaluation context, even
+-- though the exact same call from a plain (non-expr) callback — as done
+-- here — reads correctly. `completion.lua` sets `["<Tab>"] = false` and
+-- `["<CR>"] = false` in blink's own keymap config so the two mappings never
+-- fight over the same key.
+local function accept_or_fallback(key)
+  local ok, cmp = pcall(require, "blink.cmp")
+  if ok then
+    if cmp.snippet_active() and cmp.accept() then
+      return
+    elseif cmp.is_visible() and cmp.select_and_accept() then
+      return
+    elseif key == "<Tab>" and cmp.snippet_forward() then
+      return
     end
   end
-  return vim.api.nvim_replace_termcodes("<Tab>", true, true, true)
-end, { expr = true, silent = true, desc = "AI: accept ghost text (else normal Tab)" })
+  if key == "<Tab>" and ghost_text_enabled then
+    local mok, minuet = pcall(require, "minuet.virtualtext")
+    if mok and minuet.action.is_visible() then
+      minuet.action.accept()
+      return
+    end
+  end
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, true, true), "n", false)
+end
+
+map("i", "<Tab>", function() accept_or_fallback("<Tab>") end,
+  { silent = true, desc = "Accept completion / snippet-jump / ghost text (else normal Tab)" })
+map("i", "<CR>", function() accept_or_fallback("<CR>") end,
+  { silent = true, desc = "Accept completion (else normal Enter)" })
 
 map("n", "<leader>at", "<cmd>Minuet virtualtext toggle<cr>", d("AI: toggle ghost text (this session only)"))
 

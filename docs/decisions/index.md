@@ -1532,3 +1532,19 @@ the explorer/picker and its own notifier module does the same job at zero new de
 once actually enabled.
 
 ---
+
+## `<leader>k` added as a second entry point to keymap search {#leader-k-keymap-search}
+
+**Decision.** `<leader>k` now calls the exact same `require("config.keymap_search").picker()` as
+`<leader>?` — two keys, one implementation, both documented.
+
+**Context.** Reported as "space k... isn't working." It wasn't bound to anything at all — the
+only global entry point was `<leader>?` (a `:help`-style convention: `?` means "search/help" in
+many tools), and `k` alone only worked as a buffer-local dashboard quick action. `<leader>k`
+(mnemonic: **k**eymaps) is at least as intuitive a thing to reach for, and nothing was already
+using it — adding it as an alias costs nothing and fixes the report directly, rather than just
+explaining that `<leader>?` was the "correct" key.
+
+**Verified interactively**, per the testing guidance this file itself now documents
+(`#keymaps-stale-regression`) — a real tmux session, `<leader>k` pressed from the dashboard,
+confirmed the same 145-entry keymap picker opened as `<leader>?` does.

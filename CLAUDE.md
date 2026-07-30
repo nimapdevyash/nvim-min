@@ -57,7 +57,7 @@ runtime. Both `install.sh` and `nvim-min-setup` log every run to `~/.cache/nvim-
    similar popup plugin — ever. New keybindings go in that one file, grouped under the existing
    section headers, with a `desc` on every mapping. Update `KEYBINDINGS.md` to match whenever
    `keymaps.lua` changes; it's documentation, not the source of truth, and drifting is a bug.
-   `<leader>?` / the dashboard's `k` action (`lua/config/keymap_search.lua`) are a **different**
+   `<leader>?`/`<leader>k` / the dashboard's `k` action (`lua/config/keymap_search.lua`) are a **different**
    case: they regenerate a key→description list from the live keymap registry
    (`vim.api.nvim_get_keymap`) fresh every time they're opened, rather than reading a hand-written
    file — so there is nothing to keep in sync there, by design (see
@@ -165,7 +165,7 @@ bin/
 lua/config/
   options.lua                  vim.opt, disabled built-ins/providers, diagnostics/fold config
   keymaps.lua                  ALL keybindings (see principle #3)
-  keymap_search.lua            backs `<leader>?` and the dashboard's `k` — regenerates a plain
+  keymap_search.lua            backs `<leader>?`/`<leader>k` and the dashboard's `k` — regenerates a plain
                                 key→description list from the live keymap registry every time
                                 it's opened, plus writes it to a real .txt file for browsing
                                 outside nvim (see principle #3 and #keymap-search-txt-export)

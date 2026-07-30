@@ -8,7 +8,7 @@ overhead you don't need once these are muscle memory). Instead:
 
 | Key | Action |
 |---|---|
-| `<leader>?` | Fuzzy-search every keymap — key + description only, `<cr>` runs it (see `lua/config/keymap_search.lua`) |
+| `<leader>?` / `<leader>k` | Fuzzy-search every keymap — key + description only, `<cr>` runs it (see `lua/config/keymap_search.lua`) |
 | `<leader>fK` | Grep the raw `keymaps.lua` / `lua/config` source |
 
 Plus `:h {motion}` — Neovim's own help, for anything built-in (`y`, `d`, `ci"`, etc.)
@@ -189,7 +189,7 @@ the dashboard itself.
 | `r` | Recent files (full snacks.picker) |
 | `p` | Recent projects (full snacks.picker — also scans configured `dev` dirs) |
 | `e` | File manager (snacks explorer) |
-| `k` | Search keymaps (same picker as `<leader>?`, not a grep over this file) |
+| `k` | Search keymaps (same picker as `<leader>?`/`<leader>k`, not a grep over this file) |
 | `a` | AI chat |
 | `n` | New file |
 | `q` | Quit |

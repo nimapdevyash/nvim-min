@@ -1,6 +1,9 @@
 -- All keybindings live in this ONE file, grouped by section below.
 -- No which-key popup: search this file instead —
---   <leader>?   fuzzy-search every keymap (key + description only, see keymap_search.lua)
+--   <leader>?  /  <leader>k   fuzzy-search every keymap (key + description only, see
+--                              keymap_search.lua) — same picker, two entry points since
+--                              both "?" (help convention) and "k" (mnemonic: keymaps) are
+--                              reasonable things to reach for
 --   <leader>fK  grep this exact file
 local map = vim.keymap.set
 
@@ -15,6 +18,7 @@ local ghost_text_enabled = require("config.user_settings").load().features.ghost
 
 -- ── Keymap search (replaces which-key) ─────────────────────────────────────
 map("n", "<leader>?", function() require("config.keymap_search").picker() end, d("Search all keymaps"))
+map("n", "<leader>k", function() require("config.keymap_search").picker() end, d("Search all keymaps"))
 map("n", "<leader>fK", function()
   require("snacks").picker.grep({ cwd = vim.fn.stdpath("config") .. "/lua/config" })
 end, d("Grep keymaps.lua / config source"))

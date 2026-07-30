@@ -588,6 +588,13 @@ async function run(cmd) {
 
 async function mainMenu() {
   p.intro(pc.bgCyan(pc.black(" nvim-min-setup ")));
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    p.note(
+      "Nothing's configured yet — nvim runs fine either way with sane defaults.\n" +
+        `Start with ${pc.bold("AI")} if you want chat/ghost-text working, or ${pc.bold("Theme")} for looks.`,
+      "First run",
+    );
+  }
   const action = checkCancel(
     await p.select({
       message: "What would you like to configure?",

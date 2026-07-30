@@ -933,3 +933,42 @@ eliminated, not a marginal case for keeping the status quo.
 
 ---
 
+## Float transparency: onedark.nvim doesn't clear `NormalFloat`/`FloatBorder`/`Pmenu*` {#float-transparency}
+
+**Decision.** In `lua/plugins/colorscheme.lua`, after `onedark.load()`, explicitly set
+`NormalFloat`, `FloatBorder`, `Pmenu`, `PmenuSbar`, `PmenuThumb` to `bg = "none"` — gated on
+`opts.transparent` so this only applies when the user has transparency on.
+
+**Context.** Reported bug: floating panels (LSP hover, completion, pickers) showed a solid
+background even with a fully transparent Kitty terminal and `onedark.nvim`'s own `transparent`
+option enabled. Root cause, found by reading `onedark.nvim`'s actual source
+(`lua/onedark/highlights.lua`), not assumed: almost every highlight group in that file checks
+`cfg.transparent and c.none or c.bgN` — except `FloatBorder`/`NormalFloat`/`Pmenu*`, which are
+hardcoded to a solid `c.bg1` regardless of the transparent setting. This is the same class of bug
+this repo already hit once for the statusline background (`#statusline-v4`) — a colorscheme's
+`transparent` flag not actually reaching every group a "transparent look" implies.
+
+**Why this one fix covers so much.** Traced how floats are actually painted before writing
+anything: `blink.cmp`'s `BlinkCmpMenu`/`BlinkCmpDoc`/`BlinkCmpSignatureHelp` groups link straight to
+`Pmenu`/`NormalFloat` (`lua/blink/cmp/highlights.lua`), and `snacks.nvim`'s window base
+(`lua/snacks/win.lua`) links its own `Normal`/`NormalNC` to `NormalFloat` too — so every snacks
+picker/explorer window and blink's completion/doc/signature floats inherit this fix automatically,
+not just LSP hover. `fzf-lua`'s own float groups (`FzfLuaNormal`/`FzfLuaBorder`) link to `Normal`
+instead, which onedark's transparent option already handled correctly — moot now that fzf-lua is
+removed ([#snacks-picker-migration](#snacks-picker-migration)), but it's why this exact bug wasn't
+noticed via fzf-lua's own floats.
+
+**On "blur."** The original ask was for a blur effect behind floating panels specifically. That's
+not achievable from Neovim: blur is a property the terminal emulator (Kitty) applies to its whole
+window via the OS compositor — Kitty has no visibility into where Neovim draws internal floating
+windows, so it cannot selectively blur one region of its own surface. What this fix actually does
+is make floats see-through to whatever Kitty is already rendering behind its own window — which
+*will* be blurred if Kitty's own `background_blur` setting is enabled, uniformly, for the whole
+window. There is no plugin-side equivalent to a per-float blur.
+
+**Verified.** `vim.api.nvim_get_hl(0, {name="NormalFloat"}).bg` (and the same for `FloatBorder`/
+`Pmenu`) read back `nil` after this change, confirmed headlessly — before the fix these carried a
+real numeric color value inherited from onedark's `c.bg1`.
+
+---
+

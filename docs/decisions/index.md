@@ -972,3 +972,236 @@ real numeric color value inherited from onedark's `c.bg1`.
 
 ---
 
+## Dashboard: recent projects (not files), two-column layout, and a gutter-number regression guard {#dashboard-projects}
+
+**Decision.** Three related changes to `lua/config/dashboard.lua`:
+1. The numbered quick-jump panel now lists recent **projects** (directories), not recent files.
+2. That panel and "Quick actions" render side by side instead of stacked, via a new
+   `side_by_side()` helper.
+3. `hide_gutter()` (number/relativenumber/signcolumn/statuscolumn/cursorline) is now re-applied on
+   every `BufEnter`/`WinEnter` for the dashboard buffer, not just once when it's created.
+
+**Context, recent projects.** Explicit ask: "don't take me to specific recent files but their
+folder... recent projects... identify them based on package.json." Asked directly whether a
+better approach existed than a hand-rolled package.json check. It does, and it was already
+installed: `snacks.picker`'s own `projects` source
+(`lua/snacks/picker/source/recent.lua`'s `M.projects`) resolves each recent oldfile to its **git
+root** (`Snacks.git.get_root`), which covers this config's actual stack (MERN/DevOps/Terraform
+repos are all git repos) more reliably than a package.json-only check would — a Terraform-only or
+plain-Makefile project without a `package.json` would otherwise be invisible. It also optionally
+scans configured `dev` directories for project markers even when nothing in them has been opened
+yet, which a pure oldfiles-derived list could never surface. The dashboard's own always-visible
+1–5 panel (no full-picker UI needed) mirrors this with a small `project_root()` helper: git root
+first via `Snacks.git.get_root`, falling back to a `package.json`/`Makefile` ancestor walk
+(`vim.fs.find(..., {upward=true})`) only when a file genuinely isn't inside a git repo. The full
+searchable version is exposed too — new quick action `p` calls `Snacks.picker.projects()` directly,
+with `confirm` overridden away from its own `load_session` default (tailored to snacks' unused
+dashboard/session modules) to `chdir` + open the explorer, matching what the numbered panel does.
+
+**Context, two columns.** Explicit ask, given a wide terminal: "keep them in parallel... we have
+more horizontal real estate." `side_by_side()` left-aligns the shorter block to the longer one's
+width, joins with a gap, and the result still goes through the existing `center_block()` unchanged
+— centering a two-column unit as a whole needed no new centering logic, only a way to produce the
+merged lines first. Per-row keymap bindings didn't need any rework either: they're plain
+buffer-local `vim.keymap.set` calls keyed by digit/letter, not scoped to the cursor's row/column,
+so a project-jump key (`1`–`5`) and an unrelated action key (`f`, `g`, ...) landing on the *same*
+rendered row via the merge causes no conflict.
+
+**Context, the gutter-number bug.** Reported with a screenshot showing a numbered left gutter on
+the dashboard, despite `M.open()` already setting `vim.wo.number = false` etc. right after
+creating the buffer. Every headless repro attempted against the code as it stood — fresh
+`VimEnter`, and manually calling `open()` from within an already-open real file with numbers
+on — came back with `number=false`/`relativenumber=false` correctly, so the exact live trigger
+wasn't pinned down (most likely a stale in-memory session predating some earlier fix, given
+`require()` caches Lua modules and this machine's nvim-min process had been running across
+multiple edits to this file this session). Rather than leave it as an unreproduced report, the fix
+is made robust regardless of root cause: `hide_gutter()` was pulled into a named local function
+and re-run on `BufEnter`/`WinEnter` for the dashboard buffer specifically, so nothing that runs
+after buffer creation and touches these window-local options can leave the gutter showing —
+cheaper than continuing to chase a repro that wouldn't reproduce.
+
+**Alternatives considered.** For projects: a pure package.json-only walk, as originally asked —
+passed over once `Snacks.git.get_root` was found already installed and doing the more general
+version of the same job. For the gutter bug: doing nothing until it reproduced headlessly —
+rejected, since "the code is provably correct in every scenario I could construct" isn't the same
+guarantee as "this can't happen," and the fix costs nothing (a few re-applied window options on
+two cheap, rarely-firing events).
+
+**Follow-up, same session.** Two refinements after seeing it in use: swapped which side is which
+(`side_by_side(action_labels, project_labels)` — actions left, projects right) per direct feedback;
+and the dashboard's `k` quick action (grep `KEYBINDINGS.md`) turned out to have a real, measured
+~4.6s launch delay and a visually inconsistent layout — root-caused separately, see
+[#python-venv-check-latency](#python-venv-check-latency) and [#dashboard-k-grep](#dashboard-k-grep).
+
+---
+
+## The one-time Python venv/pip check was blocking every session's first file-open, not just the first-ever one {#python-venv-check-latency}
+
+**Decision.** In `lua/plugins/lsp.lua`, skip `python_venv_has_pip()`'s expensive probe entirely
+when `basedpyright` and `ruff` are already installed via Mason — check `mason-registry` first,
+only fall through to the actual `python3 -m venv` probe if either isn't installed yet.
+
+**Context.** Reported as "pressing `k` on the dashboard visibly takes a second." Traced with real
+timing instrumentation (`vim.loop.hrtime()` around `vim.cmd.edit()`), not assumed: opening
+`KEYBINDINGS.md` cold took ~4600ms. Bisected by opening *different* files first in the same
+headless session — the multi-second delay followed whichever file was opened **first**, regardless
+of which file or filetype, which ruled out anything specific to KEYBINDINGS.md, markdown, or
+treesitter (confirmed directly by no-op'ing `vim.treesitter.start` and re-timing — no change).
+`:noautocmd edit` was instant, proving it was autocmd-triggered work, not I/O. That pointed at
+`nvim-lspconfig`'s lazy-load trigger (`BufReadPre`/`BufNewFile`) — its entire `config()` function,
+including `python_venv_has_pip()`, only runs once per session, on whatever file happens to trigger
+that event first. Timing `python3 -m venv` directly on this machine confirmed the exact cost:
+**~4.3 seconds**, matching the delay almost exactly. The check (added in
+[#mason-venv-skip](#mason-venv-skip) and strengthened in [#mason-venv-pip](#mason-venv-pip)) was
+never wrong about *what* to check, only about paying that cost synchronously on every single
+launch — including on this exact machine, where `basedpyright`/`ruff` were already installed the
+entire time, which is itself proof the environment already works.
+
+**Why this is the right cache, not a new one.** No new cache file or TTL logic needed: Mason's own
+installed-package state already persists across sessions and already means "this was buildable
+here at least once." Re-deriving that fact with a fresh venv on every launch was pure waste once it
+had already succeeded a single time.
+
+**Alternatives considered.** Making the probe async (`vim.system` instead of blocking
+`vim.fn.system`) — more correct in the abstract (always reflects current state), but
+`mason-lspconfig.setup()` immediately after depends on the synchronously-decided `ensure_installed`
+list, so going async would mean deferring that whole call too — real added complexity for a check
+whose result is a near-permanent machine fact, not something that changes session to session. A
+disk-based cache file — rejected for the same reason Mason's own state already serves as one, at
+zero extra code.
+
+**Verified.** Timed the exact same `vim.cmd.edit()` call before/after: ~4600ms → ~113ms.
+
+---
+
+## Dashboard's `k` action: grep the file on disk instead of opening it as a real buffer {#dashboard-k-grep}
+
+**Decision.** Changed the "Grep keybindings" quick action from `vim.cmd.edit(KEYBINDINGS.md)` +
+`Snacks.picker.lines()` to `Snacks.picker.grep({cwd=.., glob={"KEYBINDINGS.md"}})` directly.
+
+**Context.** Two complaints about the same action: it felt slow to open, and its picker looked
+visually inconsistent with every other picker in this config (thinner, bottom-docked). The speed
+complaint's real cause was the venv-check latency above, unrelated to this action specifically —
+but the visual inconsistency was real and specific to this code path: `Snacks.picker.lines()`
+(searching lines in the *current* buffer) defaults to the "ivy" layout preset
+(`lua/snacks/picker/config/sources.lua`'s `M.lines`) — a deliberately different, bottom-anchored,
+thin-bordered style, distinct from the centered/bordered "default" preset every other picker here
+uses (files, grep, buffers, ...). Grepping the file on disk instead of opening it first as a real
+buffer has two effects at once: it uses the same default layout as everything else (fixing the
+visual complaint), and it no longer forces marksman/treesitter/gitsigns to attach to a buffer
+before the picker even appears — the file only opens for real once a line is actually picked.
+
+**Alternatives considered.** Keeping `lines()` but overriding its `layout` back to the default
+preset — rejected in favor of `grep()` since it also sidesteps eagerly opening the buffer at all,
+a strictly better property, not just a visual fix.
+
+**Superseded almost immediately, same session** — see [#dashboard-keymaps-picker](#dashboard-keymaps-picker).
+This fixed the *how* (layout, eager-loading) but not the *what*: grepping a markdown mirror of the
+keybindings, however it's invoked, still only shows raw doc-file text rather than a structured
+key/description browser. Documented here rather than edited away since the layout/eager-load
+reasoning above was correct and is still why `grep()` beats `lines()` in general — it just wasn't
+the right *source* for this specific action.
+
+---
+
+## Dashboard's `k` action: search the live keymap registry, not a doc mirror {#dashboard-keymaps-picker}
+
+**Decision.** Changed the "Search keymaps" quick action (previously "Grep keybindings") to
+`Snacks.picker.keymaps()` — the exact same picker already bound to `<leader>?`.
+
+**Context.** Direct feedback with a screenshot: grepping `KEYBINDINGS.md` surfaces raw markdown
+table rows (`| <leader>ff | Find files |`, pipes and all) as two disconnected matches per query,
+not a structured "key → what it does" browser — explicitly compared to LazyVim's which-key-style
+keymap search and asked for a better option. One already existed in this exact config:
+`Snacks.picker.keymaps()` (source `vim_keymaps`, `format = "keymap"` in
+`lua/snacks/picker/config/sources.lua`) introspects `nvim_get_keymap`-style data directly — mode,
+key, `desc`, and the source file/line each mapping came from, one clean row per keymap — and was
+already wired to `<leader>?` per `CLAUDE.md` principle #3, just never reused for this dashboard
+action. Since every mapping in `keymaps.lua` already carries a `desc` (the same principle requires
+it, specifically so this picker is useful), the result is a real per-keybinding description list,
+not raw text — and it can never drift from what's actually mapped the way a markdown mirror
+inevitably can.
+
+**Alternatives considered.** Making the grep-over-markdown approach "nicer" (a custom formatter
+splitting the table row into columns, e.g.) — rejected once it was clear the underlying data
+source was the wrong one to begin with; polishing a search over documentation when a search over
+the live keymap registry already exists and is already used elsewhere in this exact config isn't
+an improvement worth making.
+
+---
+
+## Custom formatter for the keymaps picker: key + description only {#keymaps-picker-format}
+
+**Decision.** In `lua/plugins/editor.lua`'s `picker.sources.keymaps`, override `format` to render
+just the key (aligned) and its `desc` — dropping the built-in `keymap` formatter's mode indicator,
+nowait icon, buffer number, raw rhs/the literal word `"callback"`, and truncated source file path.
+
+**Context.** Direct feedback with a screenshot, after wiring the dashboard's `k` action to
+`Snacks.picker.keymaps()` ([#dashboard-keymaps-picker](#dashboard-keymaps-picker)): the result was
+still "gibberish" — a row like `n <Space>9  callback  Jump to mark 9  :nvim-min/lu...` genuinely
+buries the one useful part (`Jump to mark 9`) under columns that don't mean anything without
+reading the source (`"callback"` is the built-in formatter's placeholder for *any* Lua-function
+keymap, which is *every* mapping in this config — see `lua/snacks/picker/format.lua`'s `M.keymap`).
+This config already guarantees every mapping has a real `desc` (`CLAUDE.md` principle #3), so
+that's the only field actually worth showing next to the key itself — everything else the default
+formatter adds is metadata for people debugging *other* people's keymaps of unknown provenance,
+not for browsing your own well-described ones.
+
+**Verified.** Headlessly rendered several real items through the custom `format` function:
+`<Esc>             Clear search highlight`, `<Space>9          Jump to mark 9`, etc. — confirmed
+the actual rendered text, not just that the option was accepted without error.
+
+**Alternatives considered.** Trimming the built-in formatter's columns one at a time via its own
+config knobs — checked first; `format = "keymap"` doesn't expose per-column toggles, only a
+wholesale formatter function, so a full replacement was the only option, not a preference.
+
+---
+
+## Keymap search backed by a generated txt export, not the live registry directly {#keymap-search-txt-export}
+
+**Decision.** New `lua/config/keymap_search.lua`: `M.export()` walks every mode's global +
+current-buffer keymaps (`vim.api.nvim_get_keymap`/`nvim_buf_get_keymap`), writes a plain
+`key<TAB>description` file to `stdpath("state") .. "/nvim-min/keymaps.txt"`, and returns the same
+data as a list. `M.picker()` calls `export()` fresh every time, then feeds that list straight into
+`Snacks.picker.pick({items=...})` — a real generic-list picker, same pattern already used for
+harpoon's mark list, not `Snacks.picker.keymaps()`. `<leader>?` and the dashboard's `k` action both
+now call `keymap_search.picker()`.
+
+**Context.** Explicit ask for a maintained txt file (key left, description right), after two
+rounds of trying to fix `Snacks.picker.keymaps()`'s presentation
+([#dashboard-keymaps-picker](#dashboard-keymaps-picker),
+[#keymaps-picker-format](#keymaps-picker-format)). Flagged the obvious risk before building it —
+a *hand*-maintained second copy of every keybinding's description would be exactly the
+doc-drift problem `CLAUDE.md` principle #3 exists to prevent — and asked directly which tradeoff
+to accept. Chosen: generate the txt file's content from the live registry instead of hand-typing
+it, so the on-disk file is real (browsable/grep-able outside nvim, which was presumably part of
+the appeal) but never drifts, since nothing is ever typed twice.
+
+**Two real bugs found while building this, not present in the previous `Snacks.picker.keymaps()`
+approach:**
+- Neovim's own built-in default mappings (visual-mode `#`/`&`/`*`, etc.) carry an
+  auto-generated `desc` of the literal form `:help <tag>` — not a real description, just a
+  help-tag pointer. Filtered out (`desc:match("^:help ")`) since this list is specifically about
+  what *this config* maps, not vanilla Vim motions.
+- A single `map("v", "<", ...)` call was showing up **three times** — traced to how
+  `vim.api.nvim_get_keymap`/`nvim_buf_get_keymap` report visual-mode mappings back separately
+  under `"v"`, `"x"`, and `"s"` when each is queried individually, even though it was registered
+  once. Deduplicating by `mode..lhs` (the obvious key) didn't catch this, since the mode letter is
+  exactly what differs across the three reports. Fixed by deduplicating on `lhs..desc` instead —
+  content-identical entries are the same real binding as far as this list cares, consistent with
+  already having dropped mode from the display entirely.
+
+**No preview pane.** Per direct instruction: the description is already fully visible in the row
+itself, so a separate pane repeating it would be redundant. `layout = { preview = false }` — found
+by reading `lua/snacks/picker/config/init.lua` (`if layout.preview == false then`) rather than
+guessing at the right disable flag.
+
+**`<cr>` still executes the mapping directly** (`vim.api.nvim_input` on the raw, non-normalized
+lhs, replacing termcodes first) — preserved from the registry-backed picker's own `confirm`
+behavior; the txt-based rewrite didn't need to lose that.
+
+**Alternatives considered.** Hand-maintaining the txt file directly — the other option offered;
+not chosen, for the drift reason above. Keeping `Snacks.picker.keymaps()` and only fixing its
+`format` — already tried ([#keymaps-picker-format](#keymaps-picker-format)) and still wasn't what
+was being asked for once the actual request (a txt-file-backed search, no preview pane) was
+stated explicitly.

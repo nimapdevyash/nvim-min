@@ -5,16 +5,14 @@
 -- default app, at zero cost to nvim's own startup or runtime.
 local M = {}
 
---- Best-effort "what file are we talking about": an oil.nvim entry under the
---- cursor, else a path under the cursor (<cfile>), else the current buffer.
+--- Best-effort "what file are we talking about": a snacks explorer entry
+--- under the cursor, else a path under the cursor (<cfile>), else the
+--- current buffer.
 local function target_path()
-  if vim.bo.filetype == "oil" then
-    local ok, oil = pcall(require, "oil")
-    if ok then
-      local entry = oil.get_cursor_entry()
-      local dir = oil.get_current_dir()
-      if entry and dir then return dir .. entry.name end
-    end
+  if vim.bo.filetype == "snacks_picker_list" then
+    local ok, picker = pcall(function() return require("snacks").picker.get({ source = "explorer" })[1] end)
+    local item = ok and picker and picker:current()
+    if item and item.file then return item.file end
   end
 
   local cfile = vim.fn.expand("<cfile>")

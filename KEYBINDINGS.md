@@ -8,7 +8,7 @@ overhead you don't need once these are muscle memory). Instead:
 
 | Key | Action |
 |---|---|
-| `<leader>?` | Fuzzy-search **every** live keymap (via fzf-lua, always accurate, shows source) |
+| `<leader>?` | Fuzzy-search every keymap — key + description only, `<cr>` runs it (see `lua/config/keymap_search.lua`) |
 | `<leader>fK` | Grep the raw `keymaps.lua` / `lua/config` source |
 
 Plus `:h {motion}` — Neovim's own help, for anything built-in (`y`, `d`, `ci"`, etc.)
@@ -60,10 +60,10 @@ Numbered, persisted per-project (keyed by cwd, survives restarts) — see `lua/c
 |---|---|
 | `<leader>ma` | Mark the current file |
 | `<leader>md` | Unmark the current file |
-| `<leader>ml` | List marks, fuzzy-searchable (fzf-lua) — `<cr>` jumps, `<C-x>` removes |
+| `<leader>ml` | List marks, fuzzy-searchable (snacks.picker) — `<cr>` jumps, `<C-x>` removes |
 | `<leader>1` – `<leader>9` | Jump straight to that numbered mark |
 
-## Find (fzf-lua)
+## Find (snacks.picker)
 
 | Key | Action |
 |---|---|
@@ -78,12 +78,15 @@ Numbered, persisted per-project (keyed by cwd, survives restarts) — see `lua/c
 | `<leader>fs` | Git status (files) |
 | `<leader>fR` | Resume last picker |
 
-## Files (oil.nvim)
+## Files (snacks explorer)
 
 | Key | Action |
 |---|---|
-| `-` | Open parent directory (edit filesystem like a buffer) |
-| `<leader>e` | Open file manager |
+| `-` / `<leader>e` | Open the file explorer (sidebar tree, git status + diagnostics badges) |
+| `a` / `d` / `r` / `c` / `m` (inside explorer) | Add / delete / rename / copy / move |
+| `o` (inside explorer) | Open entry with the OS default app |
+| `P` (inside explorer) | Toggle preview pane |
+| `q` (inside explorer) | Close the explorer |
 
 ## Diagnostics
 
@@ -164,8 +167,8 @@ Turning AI features fully off (not loading the plugin at all) is done outside nv
 ## Open externally (images, SVGs, PDFs)
 
 No image-preview plugin — that's real rendering-backend weight for something a terminal or the
-OS already does. These just shell out. Target is: an oil.nvim entry under the cursor, else a path
-under the cursor (`<cfile>`), else the current buffer.
+OS already does. These just shell out. Target is: a snacks explorer entry under the cursor, else
+a path under the cursor (`<cfile>`), else the current buffer.
 
 | Key | Action |
 |---|---|
@@ -180,11 +183,13 @@ the dashboard itself.
 
 | Key | Action |
 |---|---|
-| `1`–`5` | Open that recent file (from `vim.v.oldfiles`, whichever still exist on disk) |
+| `1`–`5` | Jump into that recent project (cd + open the file explorer there) |
 | `f` | Find files |
 | `g` | Live grep |
-| `r` | Recent files (full fzf-lua picker) |
-| `e` | File manager (oil.nvim) |
+| `r` | Recent files (full snacks.picker) |
+| `p` | Recent projects (full snacks.picker — also scans configured `dev` dirs) |
+| `e` | File manager (snacks explorer) |
+| `k` | Search keymaps (same picker as `<leader>?`, not a grep over this file) |
 | `a` | AI chat |
 | `n` | New file |
 | `q` | Quit |

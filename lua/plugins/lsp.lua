@@ -189,6 +189,23 @@ return {
       -- so that's what actually needs verifying. This is the same failure
       -- category this exact check was added for before; the first version
       -- only caught the venv-missing case, not this one.
+      --
+      -- This check itself is real, measured ~4.3s of *blocking* main-thread
+      -- time (`python3 -m venv` isn't cheap) — and it used to run on every
+      -- single launch, on whatever file you opened first, since
+      -- nvim-lspconfig's whole config() (this function) only runs once,
+      -- lazily, on the first BufReadPre/BufNewFile of the session. That made
+      -- every session's first file-open pay this cost regardless of
+      -- basedpyright/ruff already being installed — see
+      -- docs/decisions/index.md#python-venv-check-latency. Skip the probe
+      -- entirely once both are already installed: that's already proof the
+      -- environment can build them, and Mason's own installed-state is a
+      -- more reliable, zero-cost cache than re-deriving the same fact.
+      local function mason_has(name)
+        local ok, pkg = pcall(require("mason-registry").get_package, name)
+        return ok and pkg:is_installed()
+      end
+
       local function python_venv_has_pip()
         if vim.fn.executable("python3") == 0 then return false end
         local tmp = vim.fn.tempname()
@@ -198,12 +215,14 @@ return {
         return ok
       end
 
-      if python_venv_has_pip() then
+      if (mason_has("basedpyright") and mason_has("ruff")) or python_venv_has_pip() then
         vim.list_extend(ensure_installed, { "basedpyright", "ruff" })
       else
         vim.notify(
           "Skipping basedpyright/ruff — python3 can't create a venv with a working pip.\n"
-            .. "Debian/Ubuntu: sudo apt-get install python3-venv python3-pip, then restart nvim.",
+            .. "Debian/Ubuntu: sudo apt-get install python3-venv python3-pip\n"
+            .. "Or (more reliable, some distro Python builds ship ensurepip stripped out\n"
+            .. "even after that): brew install python@3.14 — then restart nvim.",
           vim.log.levels.WARN,
           { title = "nvim-min" }
         )

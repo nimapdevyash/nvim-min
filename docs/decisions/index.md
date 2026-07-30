@@ -1497,3 +1497,38 @@ out to be visually ambiguous between info/success/warn glyphs without color rend
 the log specifically to avoid drawing a conclusion from that ambiguity).
 
 ---
+
+## noice.nvim's error notifications were indistinguishable from routine info messages {#noice-error-prominence}
+
+**Decision.** Added a `routes` entry to `lua/plugins/ui.lua`'s noice.nvim config — `{filter =
+{event = "notify", error = true}, view = "notify"}` — and enabled `notifier = { enabled = true }`
+in `lua/plugins/editor.lua`'s snacks.nvim spec.
+
+**Context.** While tracing the ghost-text report, noticed that an actual `vim.notify(...,
+ERROR)` call (minuet-ai/codecompanion's own error reporting on a bad key or failed request) rendered
+*identically* to a routine info notification — same small, 2-second, bottom-right "mini" popup,
+easy to miss entirely while actively typing. Checked noice's own default routes
+(`lua/noice/config/routes.lua`): the unconditional `{filter = {event = "notify"}, view =
+Config.options.notify.view}` route sends every notify call to `notify.view` ("mini" in this
+config) regardless of level — there was never a level distinction to begin with.
+
+**Why the first attempt at this fix silently did nothing.** Added the `routes` entry alone first,
+verified it was registered (`require('noice.config').options.routes` showed it as the first
+entry) — but a real `ERROR`-level `vim.notify` still rendered as "mini". Traced into noice's
+`snacks` view backend (`lua/noice/view/backend/snacks.lua`): `is_available()` returns `_G.Snacks
+~= nil and Snacks.config.notifier.enabled` — since this config never enabled the `notifier`
+module, that check failed, the view's declared `fallback = "mini"` kicked in, and the route's
+*target* view silently degraded to the exact view it was supposed to be distinct from. The route
+matching was never the problem; the view it pointed at wasn't actually available.
+
+**Verified with a real interactive session, both before and after the fix** — not assumed from
+reading the fallback logic. Before: `vim.notify(..., ERROR)` rendered as the same small
+bottom-right "mini" line as an `INFO` call. After enabling the notifier module: the error renders
+as a distinct bordered "Notification" popup, visually unmistakable from routine info.
+
+**Alternatives considered.** Adding `nvim-notify` as a real second dependency, which noice's
+`notify` view also supports as a backend — rejected, since `snacks.nvim` is already installed for
+the explorer/picker and its own notifier module does the same job at zero new dependency cost,
+once actually enabled.
+
+---

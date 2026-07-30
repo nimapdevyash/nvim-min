@@ -4,13 +4,20 @@ return {
     -- docs/decisions/index.md#snacks-explorer and #snacks-picker-migration.
     -- Explorer and every finder below are all `snacks.picker` sources under
     -- the hood, one engine instead of two. Other snacks modules (dashboard,
-    -- notifier, terminal, ...) are never referenced anywhere in this config,
-    -- so they stay dormant — this config already has native replacements for
-    -- those, see CLAUDE.md principle #1.
+    -- terminal, ...) are never referenced anywhere in this config, so they
+    -- stay dormant — this config already has native replacements for those,
+    -- see CLAUDE.md principle #1. `notifier` is the one exception: enabled
+    -- specifically so noice.nvim's error-notification route
+    -- (lua/plugins/ui.lua) has a real backend to use — noice's own `snacks`
+    -- view backend checks `Snacks.config.notifier.enabled` and silently
+    -- falls back to the plain "mini" view otherwise, defeating the entire
+    -- point of routing errors differently. See
+    -- docs/decisions/index.md#noice-error-prominence.
     "folke/snacks.nvim",
     lazy = false,
     opts = {
       explorer = { replace_netrw = true },
+      notifier = { enabled = true },
       picker = {
         sources = {
           files = {

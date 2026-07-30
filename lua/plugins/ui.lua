@@ -17,10 +17,29 @@ return {
       -- transient corner popup that auto-dismisses; avoids adding
       -- nvim-notify as a second dependency just for a nicer notify view.
       view = "mini",
-      view_error = "mini",
+      -- Errors get the more prominent "notify" view instead — see the
+      -- `routes` override below for the equivalent fix on the vim.notify
+      -- side (LSP messages route through here; minuet-ai/codecompanion's
+      -- own error reporting routes through vim.notify instead, hence both).
+      view_error = "notify",
       view_warn = "mini",
     },
     notify = { view = "mini" },
+    -- The default route sends every vim.notify call — regardless of level —
+    -- to `notify.view` ("mini": a 2s transient corner popup, easy to miss
+    -- while actively typing). That's fine for routine info, but an actual
+    -- error (e.g. minuet-ai/codecompanion hitting an invalid API key) is
+    -- exactly the kind of thing that must not be missable — see
+    -- docs/decisions/index.md#noice-error-prominence. Routes are prepended
+    -- ahead of noice's own defaults and the first match wins, so this
+    -- intercepts error-level notify messages before the unconditional
+    -- default route (lua/noice/config/routes.lua) sends them to "mini" too.
+    routes = {
+      {
+        filter = { event = "notify", error = true },
+        view = "notify",
+      },
+    },
     lsp = {
       -- Hover/signature already have native, working bindings (K, <C-k> —
       -- see lua/plugins/lsp.lua and blink.cmp's own signature window in

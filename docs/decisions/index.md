@@ -1295,3 +1295,45 @@ installed, `tree-sitter-cli 0.26`, Neovim 0.12.4, working venv+pip, `brew` prese
 hand-waved, actually executed and read back.
 
 ---
+
+## install.sh wires every relevant shell's rc file, not one guessed from `$SHELL` {#shell-agnostic-install}
+
+**Decision.** Replaced the single `detect_rc()` (one file, chosen from `$SHELL`) with per-shell
+functions that write to every rc file for every shell actually present on the machine: `.bashrc`
+**and** `.bash_profile` if bash is installed (or either file already exists), `.zshrc` if zsh is,
+`~/.config/fish/config.fish` (fish-syntax `set -gx`/`function`, not POSIX `export`/`alias`) if
+fish is, and `.profile` unconditionally as a universal fallback.
+
+**Context.** Explicit ask: PATH + the `nv` alias need to end up working "no matter which OS and
+which shell." The single-file-from-`$SHELL` approach had two real gaps, not just theoretical
+ones: `$SHELL` is the *login* shell from `/etc/passwd`, which can differ from whatever shell a
+given terminal actually opens (bash as login shell + zsh as the interactive default is a common
+macOS-migration state) — and even for one shell, login vs. interactive sessions read different
+files (a fresh macOS Terminal tab is a login shell reading `.bash_profile`; most Linux terminal
+emulators open a plain interactive shell reading `.bashrc` — writing to only one silently breaks
+the other). fish is a harder failure, not just a wrong-file one: it never reads POSIX rc files at
+all, and its `export`/`alias` syntax doesn't parse the same way (`set -gx` for PATH; `alias` in
+fish doesn't reliably forward arguments across versions the way a `function` block does), so the
+old code would have silently done nothing useful for a fish user regardless of which file
+`detect_rc()` picked.
+
+**Presence check, not `$SHELL`.** Each shell's block runs if that shell's binary is installed *or*
+its rc file already exists — covering "isn't installed but has a leftover dotfile from a previous
+setup" as well as "is installed but $SHELL doesn't reflect it yet."
+
+**Output stays readable despite touching more files.** Per-item `ok "Added X to Y"` lines would
+multiply into 8+ lines for a bash+zsh+fish machine; instead each `wire_*` function collects
+whether anything changed and one combined summary line lists every file touched, or `skip`s
+silently per-file when nothing needed adding.
+
+**Alternatives considered.** Only writing to whichever file's shell is "detected" as currently
+running (via `$0`/parent-process introspection) — more surgical, but still leaves the file
+uncovered for whichever *other* shell/session-type the user opens next; writing everywhere
+present is simpler and strictly more robust for the same reason `.bashrc`+`.bash_profile` both
+get written even though only one applies to any single terminal session.
+
+**Verified.** Extracted the shell-wiring logic and ran it against a throwaway `$HOME` three times:
+first run wrote `.bashrc`/`.bash_profile`/`.zshrc`/`.profile` (bash+zsh present on the test
+machine); adding a fake `~/.config/fish` directory and re-running added `config.fish` with correct
+fish syntax while every other file correctly reported "already configured"; a third run changed
+nothing at all — confirmed idempotent, not just assumed from the `grep`-before-append pattern.

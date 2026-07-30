@@ -121,7 +121,9 @@ Three ways to jump between them:
 1. **`nvims`** — an `nvm`-style interactive picker (`~/.local/bin/nvims`, on `PATH`). Run `nvims`
    with no args to fuzzy-pick a config (fzf UI with a README preview pane), or `nvims nvim-min` /
    `nvims nvim` to jump straight to one.
-2. **Shell aliases** (added to `~/.zshrc`):
+2. **Shell aliases** — `install.sh` wires these into every shell rc file that's actually relevant
+   on your machine (bash's `.bashrc`+`.bash_profile`, zsh's `.zshrc`, fish's `config.fish`, plus
+   `.profile` as a universal fallback), not just one guessed from `$SHELL`:
    - `nvim` → unchanged, your existing LazyVim config
    - `nv` → this config (`NVIM_APPNAME=nvim-min nvim`)
 3. Set `NVIM_APPNAME` manually for one-off scripting/CI use.

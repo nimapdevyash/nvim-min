@@ -218,34 +218,90 @@ for tool in nvim-min-setup nvims; do
   ok "$tool -> ~/.local/bin/$tool"
 done
 
-# ---- 5. shell rc (idempotent) ------------------------------------------------
+# ---- 5. shell rc (idempotent, every shell this machine might use) ----------
 step "Wiring up your shell"
 
-detect_rc() {
-  case "${SHELL:-}" in
-    */zsh) echo "$HOME/.zshrc" ;;
-    */bash) echo "$HOME/.bashrc" ;;
-    *) echo "$HOME/.profile" ;;
-  esac
-}
-RC_FILE="$(detect_rc)"
-touch "$RC_FILE"
+# Guessing a single rc file from $SHELL (the *login* shell, per /etc/passwd)
+# and writing only there is exactly how "it doesn't work in my other
+# terminal" bugs happen — a login shell reads a different file than an
+# interactive one (bash: .bash_profile vs .bashrc), fish doesn't read POSIX
+# rc files at all, and $SHELL can simply be stale/wrong. Instead: write to
+# every rc file for every shell that's actually present on this machine
+# (installed, or already has a dotfile — someone's existing setup is signal
+# too), so this works after install regardless of which shell you actually
+# open next.
+declare -a WRITTEN_TO=()
 
 # Checks for the actual functional content, not a marker comment — so this
 # stays idempotent even against a manual edit that didn't come from this
 # script (e.g. ~/.local/bin already on PATH from an unrelated dotfiles setup).
 add_once() {
-  local label="$1" grep_pattern="$2" line="$3"
-  if grep -qE "$grep_pattern" "$RC_FILE" 2>/dev/null; then
-    skip "$label already configured in $RC_FILE"
+  local file="$1" label="$2" grep_pattern="$3" line="$4"
+  touch "$file"
+  if grep -qE "$grep_pattern" "$file" 2>/dev/null; then
+    return 1
   else
-    printf '\n# %s\n%s\n' "$label" "$line" >> "$RC_FILE"
-    ok "Added $label to $RC_FILE"
+    printf '\n# %s\n%s\n' "$label" "$line" >> "$file"
+    return 0
   fi
 }
 
-add_once '~/.local/bin on PATH' '\.local/bin' 'export PATH="$HOME/.local/bin:$PATH"'
-add_once 'nv alias (nvim-min)' 'alias nv=' "alias nv=\"NVIM_APPNAME=$NVIM_MIN_APPNAME nvim\""
+wire_posix_shell() {
+  # POSIX-syntax rc file (bash/zsh/sh/ksh all understand export/alias the
+  # same way) — used for .bashrc, .bash_profile, .zshrc, .profile alike.
+  local file="$1" changed=0
+  add_once "$file" '~/.local/bin on PATH' '\.local/bin' \
+    'export PATH="$HOME/.local/bin:$PATH"' && changed=1
+  add_once "$file" 'nv alias (nvim-min)' 'alias nv=' \
+    "alias nv=\"NVIM_APPNAME=$NVIM_MIN_APPNAME nvim\"" && changed=1
+  if [[ $changed -eq 1 ]]; then
+    WRITTEN_TO+=("$file")
+  else
+    skip "$file already configured"
+  fi
+}
+
+wire_fish() {
+  # fish never reads .bashrc/.zshrc/.profile, and its syntax for both PATH
+  # and aliases is entirely different (`set -gx`, and `alias` doesn't
+  # reliably forward arguments across fish versions the way a `function`
+  # does) — so it gets its own file and its own block, not a shared one.
+  local file="$HOME/.config/fish/config.fish" changed=0
+  mkdir -p "$(dirname "$file")"
+  add_once "$file" '~/.local/bin on PATH' '\.local/bin' \
+    'set -gx PATH $HOME/.local/bin $PATH' && changed=1
+  add_once "$file" 'nv function (nvim-min)' 'function nv' \
+    "function nv
+    env NVIM_APPNAME=$NVIM_MIN_APPNAME nvim \$argv
+end" && changed=1
+  if [[ $changed -eq 1 ]]; then
+    WRITTEN_TO+=("$file")
+  else
+    skip "$file already configured"
+  fi
+}
+
+# bash: both files, since interactive vs. login shells read different ones
+# (a fresh macOS Terminal tab is a login shell → .bash_profile; most Linux
+# terminal emulators open a plain interactive shell → .bashrc) and there's
+# no way to know from here which kind the user's *next* terminal will be.
+if have bash || [[ -f "$HOME/.bashrc" ]] || [[ -f "$HOME/.bash_profile" ]]; then
+  wire_posix_shell "$HOME/.bashrc"
+  wire_posix_shell "$HOME/.bash_profile"
+fi
+if have zsh || [[ -f "$HOME/.zshrc" ]]; then
+  wire_posix_shell "$HOME/.zshrc"
+fi
+if have fish || [[ -d "$HOME/.config/fish" ]]; then
+  wire_fish
+fi
+# Universal fallback: sourced by plain `sh`/`dash` login shells, and by
+# bash/zsh too if neither of the shell-specific files above exists yet.
+wire_posix_shell "$HOME/.profile"
+
+if [[ ${#WRITTEN_TO[@]} -gt 0 ]]; then
+  ok "Added ~/.local/bin + the 'nv' alias to: ${WRITTEN_TO[*]}"
+fi
 
 # ---- 6. bootstrap nvim itself -------------------------------------------------
 step "Installing plugins, LSP servers, and treesitter parsers (this takes a few minutes)"
@@ -333,8 +389,8 @@ cat <<EOF
 
   Quick reference without the docs site: README.md, KEYBINDINGS.md
 
-  ⚠ Restart your shell (or run 'source $RC_FILE') to pick up the new
-    PATH entry and the 'nv' alias.
+  ⚠ Restart your shell (open a new terminal tab, or run 'exec $SHELL -l')
+    to pick up the new PATH entry and the 'nv' alias.
 
 EOF
 

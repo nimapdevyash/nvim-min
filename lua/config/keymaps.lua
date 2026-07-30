@@ -1,6 +1,6 @@
 -- All keybindings live in this ONE file, grouped by section below.
 -- No which-key popup: search this file instead —
---   <leader>?   fuzzy-search every keymap (live, via fzf-lua, always accurate)
+--   <leader>?   fuzzy-search every keymap (key + description only, see keymap_search.lua)
 --   <leader>fK  grep this exact file
 local map = vim.keymap.set
 
@@ -14,9 +14,9 @@ end
 local ghost_text_enabled = require("config.user_settings").load().features.ghost_text
 
 -- ── Keymap search (replaces which-key) ─────────────────────────────────────
-map("n", "<leader>?", function() require("fzf-lua").keymaps() end, d("Search all keymaps"))
+map("n", "<leader>?", function() require("config.keymap_search").picker() end, d("Search all keymaps"))
 map("n", "<leader>fK", function()
-  require("fzf-lua").grep({ search = "", cwd = vim.fn.stdpath("config") .. "/lua/config" })
+  require("snacks").picker.grep({ cwd = vim.fn.stdpath("config") .. "/lua/config" })
 end, d("Grep keymaps.lua / config source"))
 
 -- ── General ─────────────────────────────────────────────────────────────────
@@ -63,21 +63,21 @@ map("n", "<S-h>", "<cmd>bprevious<cr>", d("Previous buffer"))
 map("n", "<leader>bd", "<cmd>bdelete<cr>", d("Delete buffer"))
 map("n", "<leader>bo", "<cmd>%bd|e#|bd#<cr>", d("Delete all other buffers"))
 
--- ── Find / fzf-lua ───────────────────────────────────────────────────────────
-map("n", "<leader>ff", function() require("fzf-lua").files() end, d("Find files"))
-map("n", "<leader>fg", function() require("fzf-lua").live_grep() end, d("Live grep in project"))
-map("n", "<leader>fw", function() require("fzf-lua").grep_cword() end, d("Grep word under cursor"))
-map("n", "<leader>fb", function() require("fzf-lua").buffers() end, d("Find buffers"))
-map("n", "<leader>fr", function() require("fzf-lua").oldfiles() end, d("Recent files"))
-map("n", "<leader>fh", function() require("fzf-lua").helptags() end, d("Help tags"))
-map("n", "<leader>fd", function() require("fzf-lua").diagnostics_workspace() end, d("Workspace diagnostics"))
-map("n", "<leader>fc", function() require("fzf-lua").git_commits() end, d("Git commits"))
-map("n", "<leader>fs", function() require("fzf-lua").git_status() end, d("Git status (files)"))
-map("n", "<leader>fR", function() require("fzf-lua").resume() end, d("Resume last picker"))
+-- ── Find / snacks.picker ─────────────────────────────────────────────────────
+map("n", "<leader>ff", function() require("snacks").picker.files() end, d("Find files"))
+map("n", "<leader>fg", function() require("snacks").picker.grep() end, d("Live grep in project"))
+map("n", "<leader>fw", function() require("snacks").picker.grep_word() end, d("Grep word under cursor"))
+map("n", "<leader>fb", function() require("snacks").picker.buffers() end, d("Find buffers"))
+map("n", "<leader>fr", function() require("snacks").picker.recent() end, d("Recent files"))
+map("n", "<leader>fh", function() require("snacks").picker.help() end, d("Help tags"))
+map("n", "<leader>fd", function() require("snacks").picker.diagnostics() end, d("Workspace diagnostics"))
+map("n", "<leader>fc", function() require("snacks").picker.git_log() end, d("Git commits"))
+map("n", "<leader>fs", function() require("snacks").picker.git_status() end, d("Git status (files)"))
+map("n", "<leader>fR", function() require("snacks").picker.resume() end, d("Resume last picker"))
 
--- ── Files / oil.nvim ─────────────────────────────────────────────────────────
-map("n", "-", "<cmd>Oil<cr>", d("Open parent directory (file manager)"))
-map("n", "<leader>e", "<cmd>Oil<cr>", d("Open file manager"))
+-- ── Files / snacks explorer ──────────────────────────────────────────────────
+map("n", "-", function() require("snacks").explorer() end, d("Open file explorer"))
+map("n", "<leader>e", function() require("snacks").explorer() end, d("Open file explorer"))
 
 -- ── Diagnostics (native) ─────────────────────────────────────────────────────
 map("n", "]d", function() vim.diagnostic.jump({ count = 1, float = true }) end, d("Next diagnostic"))

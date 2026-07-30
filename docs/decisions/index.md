@@ -1430,3 +1430,43 @@ logging/proxy in the chain sees URLs by default in a way it doesn't see headers.
 header form (`x-goog-api-key`) works identically first — a real request with a bad key returns
 `400` either way (vs. `403` with no auth at all) — before switching, rather than assuming Google's
 API supports it.
+
+---
+
+## Regression: keymaps.lua was stuck at a stale intermediate state {#keymaps-stale-regression}
+
+**Decision.** Restored `lua/config/keymaps.lua`'s `<leader>?`/`<leader>fK`, the whole
+`<leader>ff`–`<leader>fR` block, and `-`/`<leader>e` to call `snacks.picker`/`snacks.explorer` —
+they had silently reverted to calling `fzf-lua`/`<cmd>Oil<cr>`, neither of which has been an
+installed plugin since [#snacks-picker-migration](#snacks-picker-migration) and
+[#snacks-explorer](#snacks-explorer).
+
+**Context.** Reported as "can't toggle the file explorer," "no working ghost text," and "I don't
+see any keybindings working properly." The first two turned out to be separate, real issues (see
+below); the third was this — and it was self-inflicted. While splitting a large uncommitted diff
+into micro-commits, `keymaps.lua` needed surgical separation between pre-existing work (the
+`accept_or_fallback` rewrite) and this session's work (the fzf-lua/oil.nvim migration): the file
+was temporarily overwritten with an intermediate reconstruction containing only the first, staged
+and committed that intermediate version, and — the actual mistake — never restored to its true
+final content before the *next* commit that assumed it already had the migration applied.
+`git add` staged whatever was already sitting on disk without re-verifying it matched intent.
+
+**How this was found.** Not from re-reading the diff — from a real interactive test. `-` appeared
+to do nothing when pressed inside the explorer (expected: toggle-close). `:verbose map -` inside
+a live session showed `<Cmd>Oil<CR>`, "Last set from init.lua" — a mapping that should not have
+existed at all after the migration commit. Grepped every `lua/*.lua` file for the same class of
+stale reference (`fzf-lua`, `<cmd>Oil`, `Snacks.picker.keymaps()`) to confirm the damage was
+isolated to this one file — `lua/plugins/lsp.lua` went through the identical reconstruction
+process for the same commit split and had already been caught and fixed at the time (noticed via
+the harness's own "file modified externally" note, not missed).
+
+**The actual lesson.** Reconstructing intermediate file states for commit-splitting purposes is
+inherently risky exactly because it requires putting a file into a state that must later be
+undone — and "undo" is a manual step with nothing enforcing it, unlike a real `git` operation
+(rebase, cherry-pick) where the tool itself guarantees the final tree matches what was asked for.
+Verifying a diff's *content* before committing is not the same as verifying the *working tree*
+ends up correct afterward — this bug produced a perfectly reasonable-looking diff (`git add` +
+`git commit` both succeeded, `bash -n`/`node --check`/a headless nvim load all passed) while the
+actual keymaps were still wrong, because none of those checks exercise a specific keybinding
+resolving to a specific implementation. A real interactive session, not another `--headless`
+smoke test, is what actually caught it.

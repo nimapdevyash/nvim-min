@@ -1533,18 +1533,30 @@ once actually enabled.
 
 ---
 
-## `<leader>k` added as a second entry point to keymap search {#leader-k-keymap-search}
+## `<leader>k` added, then superseded by `<leader>fk`, as a second entry point to keymap search {#leader-k-keymap-search}
 
-**Decision.** `<leader>k` now calls the exact same `require("config.keymap_search").picker()` as
-`<leader>?` — two keys, one implementation, both documented.
+**Decision.** The keymap-search picker (`require("config.keymap_search").picker()`) has two entry
+points: `<leader>?` and `<leader>fk`. Bare `<leader>k` was tried first, then removed in favor of
+`<leader>fk`.
 
 **Context.** Reported as "space k... isn't working." It wasn't bound to anything at all — the
 only global entry point was `<leader>?` (a `:help`-style convention: `?` means "search/help" in
-many tools), and `k` alone only worked as a buffer-local dashboard quick action. `<leader>k`
-(mnemonic: **k**eymaps) is at least as intuitive a thing to reach for, and nothing was already
-using it — adding it as an alias costs nothing and fixes the report directly, rather than just
-explaining that `<leader>?` was the "correct" key.
+many tools), and `k` alone only worked as a buffer-local dashboard quick action. `<leader>k` was
+added as a bare alias (mnemonic: **k**eymaps) since nothing was using it yet.
 
-**Verified interactively**, per the testing guidance this file itself now documents
-(`#keymaps-stale-regression`) — a real tmux session, `<leader>k` pressed from the dashboard,
-confirmed the same 145-entry keymap picker opened as `<leader>?` does.
+Follow-up request: make it "leader s k" for "search keymaps," for intuitiveness. Checking for
+collisions first: `<leader>s*` is already the split namespace (`sv`/`sh`/`se`/`sx`) and `<leader>f*`
+is already the find namespace (`ff`/`fg`/`fb`/...) — `<leader>fk` fits the existing find namespace
+(this *is* a find operation, just over keymaps instead of files) better than adding `<leader>sk` to
+a namespace it doesn't belong in, or leaving bare `<leader>k` floating outside any namespace.
+Presented both options plus "keep `<leader>k`"; user chose `<leader>fk`. Bare `<leader>k` was then
+removed from `lua/config/keymaps.lua` entirely — `<leader>?` and `<leader>fk` are the only two
+entry points now.
+
+**Verified interactively**, per the testing guidance this file itself documents
+(`#keymaps-stale-regression`) — a real tmux session, `<leader>f` then `k` pressed from the
+dashboard, confirmed the same keymap picker opened as `<leader>?` does. A separate tmux capture
+that appeared to show bare `<leader>k` still working was cross-checked against two independent
+ground-truth sources — `grep -n '"<leader>k"' lua/config/keymaps.lua` (zero matches) and a headless
+`vim.api.nvim_get_keymap("n")` scan for `lhs == " k"` (no match) — both confirming no such mapping
+exists; the tmux capture was a test-harness artifact (stale pane read), not a real regression.

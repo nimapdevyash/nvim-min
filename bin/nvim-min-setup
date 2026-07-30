@@ -53,14 +53,18 @@ const PROVIDERS = {
     label: "Gemini",
     envVar: "GEMINI_API_KEY",
     getKeyUrl: "https://aistudio.google.com/apikey",
-    // A real, stable Google API key format (not specific to Gemini) —
-    // `AIza` + 35 more characters, 39 total. Not a hard validator (Google
-    // could change this), just a fast, offline hint that catches "this is
-    // clearly the wrong kind of credential" — e.g. an OAuth/Vertex AI token
-    // pasted by mistake instead of an AI-Studio key — before ever making a
-    // network call.
-    looksValid: (key) => /^AIza[\w-]{35}$/.test(key),
-    formatHint: "starts with AIza, 39 characters",
+    // Two legitimate formats coexist as of 2026: the legacy "Standard" key
+    // (`AIza` + 35 more characters, 39 total — Google stops accepting these
+    // entirely in September 2026) and the newer "auth" key Google AI Studio
+    // now issues by default (`AQ.` prefix, longer, variable length — see
+    // docs/decisions/index.md#gemini-auth-key-format). Not a hard validator
+    // either way (Google can change this again), just a fast, offline hint
+    // that catches "this is clearly the wrong kind of credential" — e.g. an
+    // OAuth/Vertex AI token pasted by mistake instead of an AI-Studio key —
+    // before ever making a network call. A live `verify()` call is what
+    // actually decides whether the key works.
+    looksValid: (key) => /^AIza[\w-]{35}$/.test(key) || /^AQ\.[\w.-]{20,}$/.test(key),
+    formatHint: "AIzaSy... (39 chars) or the newer AQ.... auth-key format",
     async verify(key) {
       // Header, not `?key=` in the URL — confirmed both work identically
       // (same 400 on a bad key either way, vs. 403 with no auth at all),
@@ -305,17 +309,31 @@ async function runDoctorChecks() {
       .filter((provider) => hasApiKey(provider.envVar))
       .map(async (provider) => {
         const key = getApiKey(provider.envVar);
-        if (provider.looksValid && !provider.looksValid(key)) {
-          return { name: `${provider.label} key format`, ok: false, hint: `doesn't look like a typical key (expected: ${provider.formatHint}) — get one at ${provider.getKeyUrl}` };
-        }
+        // `looksValid` is a fast, offline, best-effort hint — providers do
+        // change key formats over time (e.g. Gemini's 2026 move from
+        // `AIzaSy...` "Standard" keys to `AQ....` "auth" keys, see
+        // docs/decisions/index.md#gemini-auth-key-format), so a live-verify
+        // failure or timeout is the only thing allowed to fail this check.
+        // A `looksValid` mismatch alone is now just a note attached to
+        // whatever the live result actually was.
+        const formatMismatch = provider.looksValid && !provider.looksValid(key);
+        const formatNote = `doesn't match the usual format (expected: ${provider.formatHint}) — Google/OpenAI/Anthropic occasionally change this, get a fresh key at ${provider.getKeyUrl} if you're unsure`;
         try {
           const ok = await provider.verify(key);
-          return { name: `${provider.label} key`, ok, hint: ok ? undefined : "the provider rejected it (invalid or revoked) — re-run `nvim-min-setup ai`" };
-        } catch {
+          if (ok) {
+            return { name: `${provider.label} key`, ok: true, hint: formatMismatch ? formatNote : undefined };
+          }
+          return { name: `${provider.label} key`, ok: false, hint: "the provider rejected it (invalid or revoked) — re-run `nvim-min-setup ai`" };
+        } catch (e) {
           // Unreachable right now isn't the key's fault — not a failure,
           // but still worth a quiet note rather than looking identical to
           // an actually-confirmed-working key.
-          return { name: `${provider.label} key`, ok: true, hint: "couldn't reach the provider to verify (offline?)" };
+          logLine(`doctor: ${provider.label} key unreachable during live check: ${e?.stack ?? e}`);
+          return {
+            name: `${provider.label} key`,
+            ok: true,
+            hint: formatMismatch ? `couldn't reach the provider to verify (offline?); also ${formatNote}` : "couldn't reach the provider to verify (offline?)",
+          };
         }
       }),
   );
@@ -481,6 +499,7 @@ async function cmdAi() {
     verified = null; // network error / offline — don't block on this
     verifyError = e;
   }
+  if (verifyError) logLine(`verify ${providerId} error detail: ${verifyError?.stack ?? verifyError}`);
   logLine(
     `verify ${providerId}: ${verified === null ? `unreachable (${verifyError?.message ?? "unknown"})` : verified}`,
   );

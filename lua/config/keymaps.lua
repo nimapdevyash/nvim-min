@@ -91,7 +91,11 @@ map("n", "<leader>cd", vim.diagnostic.open_float, d("Line diagnostics"))
 map("n", "<leader>cq", vim.diagnostic.setloclist, d("Diagnostics to loclist"))
 
 -- ── LSP (buffer-local maps set in lsp.lua on LspAttach; global fallbacks here)
-map("n", "<leader>ci", "<cmd>LspInfo<cr>", d("LSP info"))
+-- Neovim 0.11+'s native `:lsp` command (see :h :lsp) made nvim-lspconfig stop
+-- registering `:LspInfo` entirely (plugin/lspconfig.lua bails out early once
+-- `:lsp` exists) — `:checkhealth vim.lsp` is the actual current replacement,
+-- not a plugin-provided alias.
+map("n", "<leader>ci", "<cmd>checkhealth vim.lsp<cr>", d("LSP info"))
 map("n", "<leader>cm", "<cmd>Mason<cr>", d("Mason installer UI"))
 map("n", "<leader>ch", function()
   vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = 0 }), { bufnr = 0 })

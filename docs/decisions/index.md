@@ -1560,3 +1560,40 @@ that appeared to show bare `<leader>k` still working was cross-checked against t
 ground-truth sources — `grep -n '"<leader>k"' lua/config/keymaps.lua` (zero matches) and a headless
 `vim.api.nvim_get_keymap("n")` scan for `lhs == " k"` (no match) — both confirming no such mapping
 exists; the tmux capture was a test-harness artifact (stale pane read), not a real regression.
+
+---
+
+## `LspInfo` alias fix and Gemini's 2026 key-format change {#leader-ci-lspinfo-and-gemini-auth-key}
+
+**Decision (LspInfo).** `<leader>ci` now runs `<cmd>checkhealth vim.lsp<cr>` directly instead of
+`<cmd>LspInfo<cr>`.
+
+**Context.** A full keybinding audit (headless `vim.api.nvim_get_commands` + real interactive
+checks) found `:LspInfo` doesn't exist in this setup at all. Neovim 0.11+ ships a native `:lsp`
+command (`:h :lsp` — `enable`/`disable`/`restart`/`stop` subcommands, no `info`); nvim-lspconfig's
+`plugin/lspconfig.lua` checks for that command's existence and returns immediately if found,
+skipping registration of its own `:LspInfo`/`:LspLog`/etc. compat commands entirely (confirmed by
+reading the source: `if vim.fn.exists(':lsp') == 2 then return end`). `:LspInfo` used to just alias
+to `:checkhealth vim.lsp` anyway — calling that directly removes the now-broken indirection.
+{#gemini-auth-key-format}
+
+**Decision (Gemini key format).** `nvim-min-setup`'s Gemini `looksValid` regex now accepts either
+`AIza[\w-]{35}` (legacy "Standard" key, 39 chars total) or `AQ\.[\w.-]{20,}` (the newer "auth key"
+format). `doctor`'s per-provider check no longer hard-fails on a `looksValid` mismatch alone — it
+always attempts a live `verify()` call first, and a format mismatch on an otherwise-working key is
+now just an attached hint, not a failure.
+
+**Context.** Reported as "adding the Gemini key keeps throwing an error." The stored key (53 chars,
+`AQ.` prefix) live-verified as `true` against Google's API in `nvim-min-setup ai`'s own log
+(`verify gemini: true`), yet `doctor` reported `Gemini key format=FAIL` — because the old code path
+skipped `verify()` entirely once `looksValid` failed, so a working key never got the chance to prove
+itself. Researched Google's current key rollout: as of 2026, Google AI Studio issues `AQ.`-prefixed
+"auth keys" by default for all new keys (including brand-new projects) as part of a security model
+tied to a bound service account; legacy `AIzaSy...` "Standard" keys stop being accepted entirely in
+September 2026. Free-tier Gemini API access itself is unaffected — this is a key-*format* change,
+not a pricing/availability one; the user's key working fine in Zed (which doesn't format-check
+keys) while failing our own stricter offline pre-check was the direct symptom.
+
+**Verified**: isolated regex test against the real stored key (length/prefix only, value never
+printed) confirms `looksValid` now returns `true`; a live `doctor` run now reports `Gemini key=ok`
+where it previously reported a hard failure on the identical stored key.

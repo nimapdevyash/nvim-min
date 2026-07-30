@@ -13,23 +13,33 @@ cd ~/.config/nvim-min && ./install.sh
 That's the whole setup. `install.sh`:
 
 1. Detects your OS/package manager and installs whatever's missing (git, curl, tar, a C compiler,
-   fzf, ripgrep, lazygit, node+npm, Python's `venv` module).
+   ripgrep, fd, lazygit, node+npm, Python's `venv` module) — preferring whichever package manager
+   actually has a current-enough version per tool (e.g. Arch's pacman for `tree-sitter-cli`/
+   `lazygit`/Neovim itself, verified directly against each distro's real package repo rather than
+   assumed), falling back to Homebrew/Linuxbrew where a distro's own package is too old.
 2. Installs `nvim-min-setup`'s own dependencies and symlinks it (and `nvims`) onto your `PATH`.
-3. Wires the `nv` alias into your shell rc — idempotent, safe to re-run.
+3. Wires the `nv` alias and PATH entry into **every shell rc file actually relevant on your
+   machine** — bash's `.bashrc`+`.bash_profile`, zsh's `.zshrc`, fish's `config.fish`, plus
+   `.profile` as a fallback — not just one guessed from `$SHELL`. Idempotent, safe to re-run.
 4. Bootstraps nvim itself: plugins, LSP servers, treesitter parsers. Genuinely takes a few minutes
    the first time (Mason installs ~15 language servers via npm) — that's normal.
-5. Offers to launch the interactive setup CLI right then, so you can paste your Gemini key and
+5. Offers to launch the interactive setup CLI right then, so you can set an AI provider/key and
    pick a theme before you ever open nvim.
 
+Every run writes a full transcript to `~/.cache/nvim-min/install.log`; if a step fails, the script
+tells you exactly which step, which command, and which line failed — see
+[Troubleshooting](#troubleshooting) below.
+
 See [Decision history → One-command setup](/decisions/#install-script) for why it's built this
-way, including two real headless-Neovim gotchas it works around.
+way, including two real headless-Neovim gotchas it works around, and
+[→ Every shell, not one guess](/decisions/#shell-agnostic-install) for the PATH/alias wiring.
 
 ## Configure any time
 
 Didn't set your API key or theme during `install.sh`? Run the CLI directly:
 
 ```sh
-nvim-min-setup ai        # paste your Gemini API key
+nvim-min-setup ai        # pick a provider (Gemini/OpenAI/Anthropic), set its API key
 nvim-min-setup theme     # pick a onedark style + transparency
 ```
 
@@ -52,15 +62,32 @@ Handled for you by `install.sh` — listed here for reference:
 
 - Neovim **0.12+**
 - `git`, `curl`, `tar`, a C compiler (`cc`) — treesitter parsers compile on first use
-- [`fzf`](https://github.com/junegunn/fzf), [`ripgrep`](https://github.com/BurntSushi/ripgrep) — fuzzy finding / grep
+- [`ripgrep`](https://github.com/BurntSushi/ripgrep), [`fd`](https://github.com/sharkdp/fd) (optional but recommended) — fuzzy finding / grep
 - [`lazygit`](https://github.com/jesseduffield/lazygit) — `<leader>gg`
 - `node` + `npm` — most LSP servers/formatters install through Mason via npm; also runs the setup CLI
 - Python's `venv` module (`python3-venv` on Debian/Ubuntu) — needed for `basedpyright`/`ruff` to install
-- A [Gemini API key](https://aistudio.google.com/apikey) for the AI features (optional, see [AI features](/guide/ai-features))
+- An API key for at least one AI provider — Gemini, OpenAI, or Anthropic (optional, see
+  [AI features](/guide/ai-features))
+
+## Troubleshooting
+
+```sh
+nvim-min-setup doctor
+```
+
+Checks the same requirements `install.sh` installs, live, against your actual system — a missing
+binary, a stale `tree-sitter-cli`, or wrong `secrets.env` permissions show up as a clear ✓/✗
+instead of a confusing failure somewhere downstream. Doesn't fix anything itself; re-run
+`./install.sh` for that.
+
+If `install.sh` itself fails partway through, it already tells you exactly which step, which
+command, and which line — plus the full transcript is always at `~/.cache/nvim-min/install.log`
+(overwritten fresh each run). That log is also the fastest way to compare a working run on one
+machine/distro against a failing one on another.
 
 ## Next
 
 - [Switching configs](/guide/switching-configs) — how this coexists with LazyVim or anything else
 - [Keybindings](/guide/keybindings) — the full reference, searchable in-editor with `<leader>?`
-- [AI features](/guide/ai-features) — Gemini chat and ghost-text completion
+- [AI features](/guide/ai-features) — chat and ghost-text completion, Gemini/OpenAI/Anthropic
 - [Decision history](/decisions/) — why things are built the way they are

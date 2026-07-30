@@ -1337,3 +1337,64 @@ first run wrote `.bashrc`/`.bash_profile`/`.zshrc`/`.profile` (bash+zsh present 
 machine); adding a fake `~/.config/fish` directory and re-running added `config.fish` with correct
 fish syntax while every other file correctly reported "already configured"; a third run changed
 nothing at all — confirmed idempotent, not just assumed from the `grep`-before-append pattern.
+
+---
+
+## install.sh: full transcript logging + an ERR trap that names the exact failing step {#install-script-logging}
+
+**Decision.** Every `install.sh` run tees its entire output (this script's own messages and every
+subcommand's) to `~/.cache/nvim-min/install.log`, overwritten fresh each run, preceded by a
+header (`uname`, `/etc/os-release`, user, shell, repo path). A `trap ... ERR` fires on any command
+that fails under `set -e` and reports the exit code, the step name (`step()` now also sets
+`CURRENT_STEP`), the exact failing command (`$BASH_COMMAND`), and the line number, then points at
+the log file — instead of `set -e` just silently stopping with whatever partial output happened to
+still be on screen.
+
+**Context.** Explicit ask: running this across several different Linux distributions, "if it
+fails we know where exactly it failed and why" — a bare stack-trace-free stop partway through a
+20-step script is not that, especially when the person debugging it isn't the person who hit the
+failure (a different machine, a different distro, asking for help later). `tee`, not just
+appending inside each function, was chosen specifically so the log captures *everything*
+verbatim, including subcommand output (`npm install`, `pacman`/`apt-get` output, the headless nvim
+bootstrap) that would otherwise only ever exist transiently in a scrolled-past terminal.
+
+**Verified, not just written.** Injected a deliberate failure (`this_command_does_not_exist_12345`)
+into a scratch copy right after the requirements step and ran it for real: the trap correctly
+reported the step name, the exact command, the line number, exit code 127 propagated all the way
+out to the shell (`$?` after the script exits), and the log file contained the full transcript up
+to that point, colors and all.
+
+---
+
+## install.sh tries each distro's own package manager where it's actually good enough {#arch-native-packages}
+
+**Decision.** Three places that previously assumed only Homebrew/Linuxbrew could provide a
+current-enough version now try `pacman` first on Arch, before falling back to brew: Neovim itself,
+`tree-sitter-cli`, and `lazygit`. Separately, `node`+`npm`'s package list now installs `nodejs npm`
+(two packages) on apt and pacman instead of just `nodejs` — verified against Arch's actual package
+repository that `npm` is a distinct package there, not bundled.
+
+**Context.** Explicit ask: "full proof and will work even on arch and ubuntu." Checked
+`archlinux.org`'s package pages directly rather than assuming — `extra/tree-sitter-cli` is
+`0.26.9-1` (the `main`-branch nvim-treesitter this config uses needs 0.26+, see
+[#treesitter-branch](#treesitter-branch)/[#treesitter-main](#treesitter-main)), `extra/lazygit` is
+`0.63.1-1`, `extra/neovim` is `0.12.4-1`, and `extra/nodejs` does **not** pull in `extra/npm`
+(confirmed via the package page, not memory). All three are comfortably good enough to skip brew
+entirely on Arch — the previous code path only ever tried brew (or warned to install manually if
+brew wasn't present), meaning a pure-Arch install with no Homebrew would get an unnecessary
+"install this yourself" warning for tools `pacman` could already provide directly. Fedora's dnf
+doesn't package `lazygit` at all (checked, 404 on `packages.fedoraproject.org`) and apt's
+`tree-sitter-cli`/Neovim are both well-documented as too old already — those two keep going
+straight to brew/manual, since a native attempt there would just waste time before falling
+through anyway.
+
+**`pkg_install` now allows space-separated package lists per manager**, unquoted deliberately so
+they word-split into separate arguments (e.g. `pacman -S --noconfirm nodejs npm`, two packages,
+not one literal package named `"nodejs npm"`) — safe since every caller passes a hardcoded
+literal, never anything derived from user input.
+
+**Verified with stubbed binaries, not assumed from the package pages alone.** Built fake `pacman`/
+`sudo` binaries that log their exact invocation and always succeed, forced `$PKG=pacman` with
+every other tool reported absent, and ran the node+npm/tree-sitter-cli/lazygit logic against them:
+confirmed `pacman -S --noconfirm nodejs npm` (split into two real arguments, not one broken
+literal), `... tree-sitter-cli`, and `... lazygit` were each invoked exactly as intended.

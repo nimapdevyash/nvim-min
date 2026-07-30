@@ -60,11 +60,20 @@ cd ~/.config/nvim-min && ./install.sh
 ```
 
 This does everything: detects your OS/package manager and installs whatever's missing from the
-requirements above, symlinks `nvim-min-setup`/`nvims` onto your `PATH`, wires the `nv` alias into
-your shell rc (idempotently — safe to re-run), bootstraps nvim itself (plugins, LSP servers,
-treesitter parsers — genuinely takes a few minutes the first time), and finishes by offering to
-launch the interactive setup CLI right then. See
-[Decision history → One-command setup](docs/decisions/index.md#install-script) for why it's structured this way.
+requirements above (preferring each distro's own package manager where it's actually good enough —
+e.g. Arch's `pacman` for `tree-sitter-cli`/`lazygit`/Neovim itself, checked directly against each
+distro's package repo — and falling back to Homebrew/Linuxbrew otherwise), symlinks
+`nvim-min-setup`/`nvims` onto your `PATH`, wires the `nv` alias into every shell rc file actually
+relevant on your machine (idempotently — safe to re-run), bootstraps nvim itself (plugins, LSP
+servers, treesitter parsers — genuinely takes a few minutes the first time), and finishes by
+offering to launch the interactive setup CLI right then. See
+[Decision history → One-command setup](docs/decisions/index.md#install-script),
+[→ Every shell, not one guess](docs/decisions/index.md#shell-agnostic-install), and
+[→ Native packages where they're good enough](docs/decisions/index.md#arch-native-packages).
+
+Every run writes a full transcript to `~/.cache/nvim-min/install.log`; if a step fails, you get the
+exact step, command, and line — not just "something went wrong." See
+[Decision history → Logging](docs/decisions/index.md#install-script-logging).
 
 Then launch with `nv`, or `NVIM_APPNAME=nvim-min nvim` directly, or the `nvims` picker below.
 
@@ -141,7 +150,7 @@ that reimplementing it natively would be a net loss — noted per row.
 |---|---|---|
 | Plugin manager | [lazy.nvim](https://github.com/folke/lazy.nvim) | No native equivalent for lazy-loading + lockfile |
 | Theme | [onedark.nvim](https://github.com/navarasu/onedark.nvim) (dark, transparent) | Neovim ships no built-in Atom One Dark colorscheme, let alone one with a `transparent` option |
-| Treesitter | [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) (`main` branch) | Neovim's treesitter *engine* is native; parser/query installation isn't. Needs `tree-sitter-cli` 0.26+ (`brew install tree-sitter-cli`) — `install.sh` handles this. `master` was tried first for a lower-dependency install, but its queries don't reliably match its own parsers on Neovim 0.12 (a real crash, not a caveat — see decision history) |
+| Treesitter | [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) (`main` branch) | Neovim's treesitter *engine* is native; parser/query installation isn't. Needs `tree-sitter-cli` 0.26+ — `install.sh` handles this (pacman on Arch, brew elsewhere). `master` was tried first for a lower-dependency install, but its queries don't reliably match its own parsers on Neovim 0.12 (a real crash, not a caveat — see decision history) |
 | LSP client config | [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) | Hand-maintaining `cmd`/`filetypes`/`root_markers` for 14 servers ourselves is pure duplicated upkeep for zero benefit; this is data, consumed by native `vim.lsp.config` |
 | LSP/tool installer | [mason.nvim](https://github.com/mason-org/mason.nvim) + mason-lspconfig | No native installer for external LSP binaries. (`mason-tool-installer` was cut — its whole job is ~10 lines against `mason-registry`, done directly in `lua/plugins/lsp.lua`) |
 | Completion | [blink.cmp](https://github.com/saghen/blink.cmp) (`1.*`) | Neovim 0.11+ *can* do native LSP-driven completion (`vim.lsp.completion.enable`), but merging LSP+path+buffer into one fuzzy-ranked list needs real glue code, and blink's precompiled matcher (0.5–4ms/keystroke) would beat a hand-rolled version anyway. Pinned to stable `1.*` — v2 is an active rewrite needing an extra `blink.lib` dependency |

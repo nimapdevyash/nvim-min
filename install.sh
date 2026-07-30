@@ -13,6 +13,12 @@
 #      the first time).
 #   5. Prints where the docs live, and offers to launch the interactive
 #      config CLI (nvim-min-setup) right now.
+#
+# Every run writes a full transcript to $LOG_FILE (see below) and, on any
+# failure, an ERR trap reports exactly which step and which command failed,
+# with an exit code and a pointer to the log — running this across several
+# different Linux distros is the whole point, so "it failed somewhere" is
+# never good enough on its own.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,13 +26,56 @@ NVIM_MIN_APPNAME="nvim-min"
 
 # ---- output helpers ---------------------------------------------------------
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
-step() { printf '\n\033[1;34m▸\033[0m %s\n' "$*"; }
+CURRENT_STEP="(startup)"
+step() { CURRENT_STEP="$*"; printf '\n\033[1;34m▸\033[0m %s\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 skip() { printf '  \033[90m·\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 err()  { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# ---- logging: every run gets a fresh, complete transcript -------------------
+# One fixed path, not a new file per run — the log from *this* run is always
+# at the same place, and `tee` mirrors everything (stdout+stderr, this
+# script's own output as well as every subcommand's) to it while still
+# showing normally in the terminal. This is what makes cross-distro
+# debugging tractable: run this on Arch, hit a failure, run it again on
+# Ubuntu, and both logs are directly comparable.
+LOG_DIR="$HOME/.cache/nvim-min"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/install.log"
+: > "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+log_header() {
+  {
+    printf '=== nvim-min install.sh — %s ===\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    printf 'uname: %s\n' "$(uname -a 2>/dev/null || echo unknown)"
+    if [[ -r /etc/os-release ]]; then
+      printf 'os-release: %s\n' "$(grep -E '^(NAME|VERSION)=' /etc/os-release | tr '\n' ' ')"
+    fi
+    printf 'user: %s (uid %s)   shell: %s   repo: %s\n' "$(id -un)" "$(id -u)" "${SHELL:-unknown}" "$REPO_DIR"
+    printf '\n'
+  } >> "$LOG_FILE"
+}
+log_header
+
+# Fires on ANY command that fails under `set -e` (this is the entire reason
+# for using $BASH_COMMAND/$LINENO/$CURRENT_STEP together — a bare "something
+# failed" is not debuggable across distros you're not sitting at).
+on_error() {
+  local exit_code=$? line_no="$1" failed_command="$2"
+  err "Install failed (exit $exit_code)"
+  err "Step:    $CURRENT_STEP"
+  err "Command: $failed_command"
+  err "Line:    $line_no"
+  printf '\nFull log: \033[1;36m%s\033[0m\n' "$LOG_FILE"
+  printf 'Re-run just the failing part after fixing the cause, or open an issue with:\n'
+  printf '  tail -n 60 "%s"\n\n' "$LOG_FILE"
+  exit "$exit_code"
+}
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
 # ---- 1. detect package manager ----------------------------------------------
 step "Detecting your platform"
@@ -50,14 +99,20 @@ fi
 
 pkg_install() {
   # pkg_install <apt-name> <dnf-name> <pacman-name> <brew-name> <apk-name>
+  # Each name may itself be a space-separated list ("nodejs npm") when one
+  # distro splits into packages another bundles together — deliberately
+  # unquoted below so those word-split into separate package-manager
+  # arguments instead of one (invalid) literal package name with a space in
+  # it. Safe here: every caller passes a hardcoded literal, never
+  # user-controlled input.
   local apt_n="$1" dnf_n="$2" pac_n="$3" brew_n="$4" apk_n="$5"
   case "$PKG" in
-    brew)   brew install "$brew_n" ;;
-    apt)    sudo apt-get update -qq && sudo apt-get install -y "$apt_n" ;;
-    dnf)    sudo dnf install -y "$dnf_n" ;;
-    pacman) sudo pacman -S --noconfirm "$pac_n" ;;
-    apk)    sudo apk add "$apk_n" ;;
-    zypper) sudo zypper install -y "$apt_n" ;;
+    brew)   brew install $brew_n ;;
+    apt)    sudo apt-get update -qq && sudo apt-get install -y $apt_n ;;
+    dnf)    sudo dnf install -y $dnf_n ;;
+    pacman) sudo pacman -S --noconfirm $pac_n ;;
+    apk)    sudo apk add $apk_n ;;
+    zypper) sudo zypper install -y $apt_n ;;
     *)      return 1 ;;
   esac
 }
@@ -90,7 +145,12 @@ ensure_tool curl     "curl"       curl   curl   curl   curl   curl
 ensure_tool tar      "tar"        tar    tar    tar    gnu-tar tar
 ensure_tool cc       "a C compiler" build-essential gcc base-devel gcc build-base
 ensure_tool rg       "ripgrep"    ripgrep ripgrep ripgrep ripgrep ripgrep
-ensure_tool npm      "node + npm" nodejs nodejs nodejs node   nodejs
+# apt and pacman both ship npm as a package *separate* from nodejs (verified
+# against Arch's actual package repo — "nodejs" does not pull in "npm" —
+# and Debian/Ubuntu have had the same split historically); installing only
+# "nodejs" on either would leave the `npm` binary missing despite this check
+# reporting success. dnf/brew/apk's single package already bundles both.
+ensure_tool npm      "node + npm" "nodejs npm" nodejs "nodejs npm" node nodejs
 
 # fd's binary is named `fd` everywhere except Debian/Ubuntu, where an
 # unrelated package already owns that name and apt's fd-find package
@@ -108,11 +168,19 @@ else
 fi
 
 # nvim-treesitter needs a *real* tree-sitter-cli 0.26+ to compile parsers.
-# Distro packages are usually far too old (Ubuntu/Debian ship 0.20.x) —
-# brew is the one place that reliably has a current version, so it's
-# special-cased here the same way lazygit is below.
-if have tree-sitter && [[ "$(tree-sitter --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)" > "0.25" ]]; then
+# Debian/Ubuntu's apt package is far too old (0.20.x) and Fedora's dnf
+# situation is unverified, so both go straight to brew. Arch is different —
+# checked against archlinux.org directly, not assumed: `extra/tree-sitter-cli`
+# is 0.26.9, easily new enough, so pacman gets tried first there and brew is
+# only the fallback if that somehow doesn't pan out.
+ts_version_ok() {
+  have tree-sitter && [[ "$(tree-sitter --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)" > "0.25" ]]
+}
+
+if ts_version_ok; then
   skip "tree-sitter-cli already installed (0.26+)"
+elif [[ "$PKG" == "pacman" ]] && pkg_install "" "" tree-sitter-cli "" "" && ts_version_ok; then
+  ok "tree-sitter-cli installed via pacman"
 elif have brew; then
   printf '  Installing tree-sitter-cli via brew (distro packages are usually too old)...\n'
   brew install tree-sitter-cli && ok "tree-sitter-cli installed" || warn "tree-sitter-cli install failed"
@@ -168,11 +236,17 @@ else
   warn "python3 not found — basedpyright/ruff (Python LSP) won't be installable until it is"
 fi
 
+# Arch's `extra/lazygit` is current and just works via pacman (verified
+# against archlinux.org) — tried first there instead of always reaching for
+# brew. Fedora's dnf doesn't package lazygit at all (checked, 404 on
+# packages.fedoraproject.org), so that one still goes straight to brew.
 if have lazygit; then
   skip "lazygit already installed"
 elif [[ "$PKG" == "brew" ]]; then
   printf '  Installing lazygit via brew...\n'
   brew install lazygit && ok "lazygit installed" || warn "lazygit install failed"
+elif [[ "$PKG" == "pacman" ]] && pkg_install "" "" lazygit "" ""; then
+  ok "lazygit installed via pacman"
 elif have brew; then
   printf '  Installing lazygit via brew (fallback — not reliably packaged by %s)...\n' "$PKG"
   brew install lazygit && ok "lazygit installed" || warn "lazygit install failed"
@@ -186,6 +260,17 @@ if ! have nvim; then
   if [[ "$PKG" == "brew" ]]; then
     printf '  Installing neovim via brew...\n'
     brew install neovim && ok "neovim installed"
+  elif [[ "$PKG" == "pacman" ]]; then
+    # Arch's extra/neovim is rolling-release-current (0.12+ as of writing,
+    # verified against archlinux.org) — apt/dnf's packaged versions are
+    # commonly a full major version or more behind 0.12, so only pacman
+    # gets tried natively here; everything else still needs brew or a
+    # manual install from the releases page.
+    printf '  Installing neovim via pacman...\n'
+    pkg_install "" "" neovim "" "" && ok "neovim installed via pacman" || {
+      err "Install Neovim 0.12+ yourself (https://github.com/neovim/neovim/releases), then re-run this script."
+      exit 1
+    }
   else
     err "Install Neovim 0.12+ yourself (https://github.com/neovim/neovim/releases), then re-run this script."
     exit 1
@@ -391,6 +476,9 @@ cat <<EOF
 
   ⚠ Restart your shell (open a new terminal tab, or run 'exec $SHELL -l')
     to pick up the new PATH entry and the 'nv' alias.
+
+  Full install log (useful if something looks off, or when comparing
+  against a run on a different machine/distro): $LOG_FILE
 
 EOF
 

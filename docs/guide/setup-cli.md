@@ -87,6 +87,15 @@ Checks the same requirements `install.sh` installs — git, curl, ripgrep, fd, l
 discovering a missing binary secondhand, from a confusing error somewhere else. Doesn't fix
 anything itself; re-run `./install.sh` for that.
 
+## Debug log
+
+Every command run — including `doctor`'s results, whether a key was set/cleared for which
+provider, and whether verification reached the provider — is appended to
+`~/.cache/nvim-min/setup-cli.log`, with a timestamp. **Never the key's actual value** — key events
+log the provider and the key's length, never the string itself, the same rule `status` follows.
+If a command crashes, the short message on screen has the full stack trace right after it, pointing
+at this same file. Shown at the bottom of `nvim-min-setup status` for quick access.
+
 ## Status and reset
 
 ```sh

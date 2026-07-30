@@ -17,6 +17,24 @@ const SETTINGS_DIR = path.join(os.homedir(), ".config", "nvim-min", "user");
 const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
 const SECRETS_FILE = path.join(SETTINGS_DIR, "secrets.env");
 
+// Same logging discipline as install.sh, for the same reason: a confusing
+// failure ("nothing happened when I pressed enter") should always be
+// debuggable from a log, not just from what happened to still be on screen.
+// Never write a key's actual value here — only that a key event happened,
+// for which provider, same as `status`'s own "set"/"not set" (never the key
+// itself).
+const LOG_DIR = path.join(os.homedir(), ".cache", "nvim-min");
+const LOG_FILE = path.join(LOG_DIR, "setup-cli.log");
+function logLine(line) {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${line}\n`);
+  } catch {
+    // Logging is diagnostic, not load-bearing — a failure to write the log
+    // itself should never be why the actual command fails.
+  }
+}
+
 const DEFAULTS = {
   theme: "dark",
   transparent: true,
@@ -36,9 +54,14 @@ const PROVIDERS = {
     envVar: "GEMINI_API_KEY",
     getKeyUrl: "https://aistudio.google.com/apikey",
     async verify(key) {
-      const res = await fetchWithTimeout(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
-      );
+      // Header, not `?key=` in the URL — confirmed both work identically
+      // (same 400 on a bad key either way, vs. 403 with no auth at all),
+      // but a key embedded in a URL is one more place it could end up
+      // logged verbatim (a network-error message that happens to echo the
+      // request URL, an HTTP proxy's own log, ...) than a header ever would.
+      const res = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/models", {
+        headers: { "x-goog-api-key": key },
+      });
       return res.status === 200;
     },
   },
@@ -115,6 +138,9 @@ function writeSettings(settings) {
   const tmp = `${SETTINGS_FILE}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`);
   fs.renameSync(tmp, SETTINGS_FILE);
+  // settings.json never holds secrets — safe to log the whole thing, unlike
+  // anything touching secrets.env below.
+  logLine(`wrote settings.json: ${JSON.stringify(settings)}`);
 }
 
 function readSecretsLines() {
@@ -137,6 +163,8 @@ function setApiKey(envVar, key) {
   fs.writeFileSync(tmp, `${lines.join("\n")}\n`, { mode: 0o600 });
   fs.renameSync(tmp, SECRETS_FILE);
   fs.chmodSync(SECRETS_FILE, 0o600);
+  // Never the key itself — same rule status/doctor already follow.
+  logLine(`set ${envVar} (value redacted, length ${key.length})`);
 }
 
 function clearApiKey(envVar) {
@@ -146,6 +174,7 @@ function clearApiKey(envVar) {
   fs.writeFileSync(tmp, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
   fs.renameSync(tmp, SECRETS_FILE);
   fs.chmodSync(SECRETS_FILE, 0o600);
+  logLine(`cleared ${envVar}`);
 }
 
 function bail() {
@@ -262,6 +291,7 @@ async function cmdDoctor() {
       p.log.warn(`${c.name}${c.hint ? pc.dim(` — ${c.hint}`) : ""}`);
     }
   }
+  logLine(`doctor: ${checks.map((c) => `${c.name}=${c.ok ? "ok" : "FAIL"}`).join(", ")}`);
 
   if (failures === 0) {
     p.outro(pc.green("Everything checks out."));
@@ -385,11 +415,16 @@ async function cmdAi() {
   const s = p.spinner();
   s.start("Verifying key");
   let verified = null;
+  let verifyError = null;
   try {
     verified = await provider.verify(key.trim());
-  } catch {
+  } catch (e) {
     verified = null; // network error / offline — don't block on this
+    verifyError = e;
   }
+  logLine(
+    `verify ${providerId}: ${verified === null ? `unreachable (${verifyError?.message ?? "unknown"})` : verified}`,
+  );
   if (verified === true) {
     s.stop(pc.green("Key verified — the provider accepted it."));
   } else if (verified === false) {
@@ -502,7 +537,7 @@ async function cmdStatus() {
     ),
   ];
   p.note(lines.join("\n"), "settings");
-  p.outro(`${pc.dim(SETTINGS_FILE)}`);
+  p.outro(`${pc.dim(SETTINGS_FILE)}\n${pc.dim(`Debug log: ${LOG_FILE}`)}`);
 }
 
 async function cmdReset() {
@@ -620,6 +655,7 @@ async function mainMenu() {
 
 async function main() {
   const cmd = process.argv[2];
+  logLine(`invoked: ${cmd ?? "(menu)"} — node ${process.version}, ${process.platform}`);
   if (!cmd) {
     await mainMenu();
   } else if (cmd === "help" || cmd === "-h" || cmd === "--help") {
@@ -630,10 +666,14 @@ async function main() {
 }
 
 main().catch((err) => {
-  // A crash here should never look like a Node stack trace — this tool's
-  // whole point is being the friendly, foolproof side of the config.
+  // Full detail (stack trace included) goes to the log; the terminal only
+  // ever sees the short version below. A crash here should never look like
+  // a Node stack trace — this tool's whole point is being the friendly,
+  // foolproof side of the config.
+  logLine(`FATAL: ${err?.stack ?? err}`);
   console.error(`\n${pc.red("✗")} ${pc.bold("nvim-min-setup hit an unexpected error:")}`);
   console.error(pc.dim(err?.message ?? String(err)));
-  console.error(pc.dim("\nIf this keeps happening, please open an issue with the command you ran."));
+  console.error(pc.dim(`\nFull error (with stack trace): ${LOG_FILE}`));
+  console.error(pc.dim("If this keeps happening, please open an issue with the command you ran and that log."));
   process.exitCode = 1;
 });

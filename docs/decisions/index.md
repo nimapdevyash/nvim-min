@@ -1398,3 +1398,35 @@ literal, never anything derived from user input.
 every other tool reported absent, and ran the node+npm/tree-sitter-cli/lazygit logic against them:
 confirmed `pacman -S --noconfirm nodejs npm` (split into two real arguments, not one broken
 literal), `... tree-sitter-cli`, and `... lazygit` were each invoked exactly as intended.
+
+---
+
+## `nvim-min-setup` gets the same logging discipline as install.sh — minus the secrets {#setup-cli-logging}
+
+**Decision.** Every `nvim-min-setup` invocation appends timestamped lines to
+`~/.cache/nvim-min/setup-cli.log`: which command ran, every `settings.json` write (the full
+object — it never holds secrets), every key set/cleared (provider + key **length** only, never
+the value), key-verification results, `doctor`'s full check results, and any uncaught error's
+full stack trace. The terminal keeps showing the short, friendly version; the log has the detail.
+
+**Context.** Explicit ask, in the same message that asked for install.sh's logging: "so is the
+configuration cli of ours" — the same "foolproof, easy to debug" bar applies to both halves of
+this config's tooling, not just the bootstrap script.
+
+**The one real risk this introduces, and how it's closed off.** A logging system for a tool whose
+whole job is handling API keys has an obvious failure mode: accidentally writing a key to disk in
+plaintext, in a *different* file than the one already designed for that (`secrets.env`, `chmod
+600`) and without that file's protections. Every `logLine` call was written to never pass a raw
+key through — `setApiKey`/`clearApiKey` log the event and, for `set`, the key's *length* (useful
+for "did I actually paste the whole thing" debugging) but never the string. Verified by grepping
+the log after real `status`/`doctor` runs for `key=` patterns — none present.
+
+**A secret-hygiene fix found while auditing this, unrelated to logging per se: Gemini's key
+moved from a URL query parameter to a header.** `verify()`'s fetch call originally used
+`?key=${key}` in the URL (Google's Generative Language API supports this) — auditing every path a
+key could end up logged through, a URL is a meaningfully worse place for a secret to live than a
+header: a network-error's message occasionally echoes the request URL, and any HTTP-level
+logging/proxy in the chain sees URLs by default in a way it doesn't see headers. Confirmed the
+header form (`x-goog-api-key`) works identically first — a real request with a bad key returns
+`400` either way (vs. `403` with no auth at all) — before switching, rather than assuming Google's
+API supports it.

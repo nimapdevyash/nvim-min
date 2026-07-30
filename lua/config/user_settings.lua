@@ -9,7 +9,12 @@ local user_dir = vim.fn.stdpath("config") .. "/user"
 local DEFAULTS = {
   theme = "dark", -- onedark style: dark | darker | cool | deep | warm | warmer | light
   transparent = true,
-  ai_provider = "gemini",
+  -- Independent per-feature, not one global choice: chat (codecompanion) and
+  -- ghost text (minuet-ai) are already two separate plugins for two
+  -- different jobs (quality vs. speed, see #two-ai-plugins) — nothing stops
+  -- you running, say, Claude for chat and Gemini for ghost text. Each value
+  -- is gemini | openai | anthropic — see lua/plugins/ai.lua.
+  ai_provider = { chat = "gemini", ghost_text = "gemini" },
   features = {
     ghost_text = true, -- minuet-ai.nvim (Gemini inline ghost-text suggestions)
     ai_chat = true, -- codecompanion.nvim (Gemini chat / inline assistant)
@@ -29,6 +34,14 @@ function M.load()
 
   local ok, decoded = pcall(vim.json.decode, content)
   if not ok or type(decoded) ~= "table" then return vim.deepcopy(DEFAULTS) end
+
+  -- Migrate a pre-multi-provider settings.json (ai_provider as a single
+  -- string) into the current per-feature shape, rather than letting
+  -- tbl_deep_extend clobber the DEFAULTS table with a bare string where it
+  -- expects a table.
+  if type(decoded.ai_provider) == "string" then
+    decoded.ai_provider = { chat = decoded.ai_provider, ghost_text = decoded.ai_provider }
+  end
 
   return vim.tbl_deep_extend("force", vim.deepcopy(DEFAULTS), decoded)
 end

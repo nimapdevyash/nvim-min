@@ -44,7 +44,9 @@ reference:
 - `node` + `npm` — most LSP servers/formatters install through Mason via npm; also runs the setup CLI
 - Python's `venv` module (on Debian/Ubuntu, a separate `python3-venv` package) — needed for the
   Python LSP servers (`basedpyright`, `ruff`) to install via Mason
-- A [Gemini API key](https://aistudio.google.com/apikey) for the AI features (optional, set up below)
+- An API key for at least one AI provider — [Gemini](https://aistudio.google.com/apikey),
+  [OpenAI](https://platform.openai.com/api-keys), or [Anthropic](https://console.anthropic.com/settings/keys) —
+  for the AI features (optional, set up below)
 
 Everything else (language servers, formatters, treesitter parsers) installs itself via
 [mason.nvim](https://github.com/mason-org/mason.nvim) / `:TSUpdate` — `install.sh` triggers this
@@ -79,22 +81,28 @@ this tool is explicitly allowed to have dependencies and a real UI that nvim its
 
 ```
 nvim-min-setup            interactive menu
-nvim-min-setup ai         set your Gemini API key
+nvim-min-setup ai         set an API key, and pick which provider chat / ghost text each use
 nvim-min-setup theme      pick a onedark style + transparency
 nvim-min-setup features   turn AI ghost-text / AI chat on or off — disabled
                           features don't just no-op, they don't load at all
                           (lazy.nvim `enabled = false`, a real startup-time saving)
-nvim-min-setup status     show current settings (never prints the key back)
-nvim-min-setup reset      restore theme/feature settings to defaults
+nvim-min-setup status     show current settings (never prints a key back)
+nvim-min-setup doctor     check system requirements (rg, fd, lazygit, tree-sitter-cli, ...)
+nvim-min-setup reset      restore settings to defaults (optionally wipe API keys too)
 ```
+
+Gemini, OpenAI, and Anthropic are all supported, chosen independently for chat
+(`codecompanion.nvim`) and ghost text (`minuet-ai.nvim`) — nothing stops you running, say, Claude
+for chat and Gemini for ghost text. `nvim-min-setup ai` verifies a key against the provider's own
+API before saving it (network permitting), rather than trusting a pasted string blindly.
 
 It writes two gitignored files under `~/.config/nvim-min/user/` (never committed, `chmod 600`):
 
-- `settings.json` — theme, transparency, feature toggles. Read by `lua/plugins/colorscheme.lua`
-  and `lua/plugins/ai.lua` at startup.
-- `secrets.env` — `GEMINI_API_KEY=...`. Loaded into the environment by
-  `lua/config/user_settings.lua` before any plugin runs, so codecompanion and minuet-ai just see
-  it as if it were exported normally.
+- `settings.json` — theme, transparency, per-feature AI provider choice, feature toggles. Read by
+  `lua/plugins/colorscheme.lua` and `lua/plugins/ai.lua` at startup.
+- `secrets.env` — `GEMINI_API_KEY=...` / `OPENAI_API_KEY=...` / `ANTHROPIC_API_KEY=...`, whichever
+  you've set. Loaded into the environment by `lua/config/user_settings.lua` before any plugin
+  runs, so codecompanion and minuet-ai just see them as if exported normally.
 
 **This is deliberately hard to break permanently.** If `settings.json` goes missing or gets
 corrupted, `lua/config/user_settings.lua` falls back to the same built-in defaults the CLI ships
@@ -141,8 +149,8 @@ that reimplementing it natively would be a net loss — noted per row.
 | File icons | [mini.icons](https://github.com/nvim-mini/mini.icons) | No native per-filetype icon glyphs; needed for the explorer/picker to be scannable at a glance. Cut once already (see native-replacements table below) and reintroduced here for this specific capability gap, not general decoration |
 | Pairs/surround | [mini.pairs](https://github.com/nvim-mini/mini.pairs) / [mini.surround](https://github.com/nvim-mini/mini.surround) | No native auto-pairs or surround-text-object support |
 | Markdown rendering | [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim) | Treesitter highlights markdown *syntax*; it doesn't reflow tables, render checkboxes, or hide `#`/backtick markup — that's a real rendering step, not a native option |
-| AI chat (Gemini) | [codecompanion.nvim](https://github.com/olimorris/codecompanion.nvim) | The whole point — no native LLM integration exists. Toggle: `nvim-min-setup features` |
-| AI ghost text (Gemini) | [minuet-ai.nvim](https://github.com/milanglacier/minuet-ai.nvim) | Copilot-style inline suggestions; needs its own provider glue no native completion has. Toggle: `nvim-min-setup features` |
+| AI chat | [codecompanion.nvim](https://github.com/olimorris/codecompanion.nvim) | The whole point — no native LLM integration exists. Gemini/OpenAI/Anthropic, picked via `nvim-min-setup ai`. Toggle: `nvim-min-setup features` |
+| AI ghost text | [minuet-ai.nvim](https://github.com/milanglacier/minuet-ai.nvim) | Copilot-style inline suggestions; needs its own provider glue no native completion has. Gemini/OpenAI/Anthropic, picked independently of chat's provider. Toggle: `nvim-min-setup features` |
 
 **Replaced with native Neovim, no plugin at all:**
 
@@ -153,7 +161,7 @@ that reimplementing it natively would be a net loss — noted per row.
 | mason-tool-installer.nvim | Direct `mason-registry` calls | `lua/plugins/lsp.lua` |
 | alpha.nvim / dashboard.nvim / snacks dashboard | A scratch buffer + `vim.v.oldfiles`, ~180 lines | [`lua/config/dashboard.lua`](lua/config/dashboard.lua) |
 | harpoon.nvim | JSON file per project (`stdpath("state")`) + `snacks.picker.pick` for the searchable list, ~100 lines | [`lua/config/harpoon.lua`](lua/config/harpoon.lua) |
-| which-key.nvim | `keymaps.lua` + `<leader>?` (snacks.picker's live keymap picker) | [KEYBINDINGS.md](KEYBINDINGS.md) |
+| which-key.nvim | `keymaps.lua` + `<leader>?` (a generated key/description search, `lua/config/keymap_search.lua`) | [KEYBINDINGS.md](KEYBINDINGS.md) |
 | Comment.nvim | Neovim's built-in `gc`/`gcc` | — |
 | indent-blankline.nvim | Not replaced — just cut. Visual only, and repaints on every cursor move | — |
 | nvim-tree / neo-tree | oil.nvim, then snacks.nvim explorer (see table above — both still plugins, chosen over the netrw-replacement alternatives for being smaller/faster or more feature-rich respectively) | — |
@@ -184,9 +192,11 @@ what triggers it. The Neovim-native equivalents applied here:
 
 ## AI ghost text
 
-`minuet-ai.nvim` shows Gemini-generated inline suggestions as you type (Copilot-style), for
+`minuet-ai.nvim` shows inline suggestions as you type (Copilot-style), for
 `javascript`/`typescript`/`(t|j)sx`, `python`, `lua`, `sh`, `yaml`, `dockerfile`, `terraform`,
-`json`, `html`, `css` — the languages this config targets, not every filetype.
+`json`, `html`, `css` — the languages this config targets, not every filetype. Backed by
+whichever provider `nvim-min-setup ai` has ghost text set to (Gemini/OpenAI/Anthropic,
+independent of chat's provider).
 
 | Key | Action |
 |---|---|

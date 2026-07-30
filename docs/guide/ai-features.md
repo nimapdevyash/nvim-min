@@ -1,8 +1,10 @@
 # AI features
 
-Both are Gemini-backed, individually toggleable from [the setup CLI](/guide/setup-cli), and
+Both plugins support Gemini, OpenAI, and Anthropic — chosen independently for each, via
+[the setup CLI](/guide/setup-cli) (`nvim-min-setup ai`). Both are individually toggleable, and
 neither is loaded at all when disabled — see
-[Decision history → Two AI plugins, not one](/decisions/#two-ai-plugins).
+[Decision history → Two AI plugins, not one](/decisions/#two-ai-plugins) and
+[→ Multi-provider AI](/decisions/#multi-provider-ai).
 
 ## Chat & inline assistant — codecompanion.nvim
 
@@ -13,8 +15,9 @@ neither is loaded at all when disabled — see
 | `<leader>aA` (visual) | Add selection to chat |
 | `<leader>ai` | Inline prompt — type a task, `<cr>` |
 
-Model: `gemini-2.5-pro` (quality matters more than latency for an on-demand chat/edit tool).
-Configured in `lua/plugins/ai.lua`.
+Provider: whichever `nvim-min-setup ai` has chat set to. On Gemini specifically, the model is
+pinned to `gemini-2.5-pro` (quality matters more than latency for an on-demand chat/edit tool);
+OpenAI/Anthropic use codecompanion's own defaults. Configured in `lua/plugins/ai.lua`.
 
 ## Ghost text — minuet-ai.nvim
 
@@ -31,15 +34,19 @@ targets, not every filetype (see `auto_trigger_ft` in `lua/plugins/ai.lua` to ad
 | `<A-e>` | Dismiss |
 | `<leader>at` | Toggle ghost text for **this session only** |
 
-Model: `gemini-2.0-flash`, thinking disabled (`thinkingBudget = 0`) — the 2.5 models' extended
-thinking mode adds latency with no benefit for line completion, per minuet-ai's own docs.
+Model: on Gemini, `gemini-2.0-flash` with thinking disabled (`thinkingBudget = 0`) — the 2.5
+models' extended thinking mode adds latency with no benefit for line completion, per minuet-ai's
+own docs. OpenAI/Anthropic use minuet's own fast defaults (`gpt-5.4-nano` / `claude-haiku-4-5`) —
+already the right tradeoff for this job, no override needed.
 
-### Why `<Tab>` doesn't fight blink.cmp
+### Why `<Tab>`/`<CR>` don't fight blink.cmp
 
-blink.cmp's `super-tab` preset already ends its own `<Tab>` handler chain with a `fallback` step
-that dynamically re-resolves whatever global `<i>`-mode `<Tab>` mapping existed *at the moment
-it's invoked* (verified by reading `blink.cmp`'s own `keymap/fallback.lua` — it re-checks
-`get_non_blink_global_mapping_for_key` on every call, not just once at registration time). So the
-ghost-text handler in `keymaps.lua` is registered as a completely ordinary global mapping, and
-blink chains to it automatically whenever its own menu-select/snippet-jump don't apply. No custom
-glue beyond that one `expr = true` mapping was needed.
+Both keys are bound once in `lua/config/keymaps.lua` (`accept_or_fallback`), not by blink.cmp's
+own `keymap` preset — blink's own `<Tab>`/`<CR>` entries are explicitly disabled
+(`["<Tab>"] = false` / `["<CR>"] = false` in `lua/plugins/completion.lua`) because they're `expr`
+mappings, evaluated under `textlock`, where `blink.cmp.is_visible()` unreliably reads back
+stale/false — see
+[Decision history → blink.cmp's own Tab/CR mapping is unreliable](/decisions/#blink-expr-mapping-bug)
+for the full story. `accept_or_fallback` tries blink's snippet/completion actions first, then
+ghost text, then falls through to a normal keypress — a single plain (non-`expr`) mapping per
+key, so there's only ever one handler in play for `<Tab>`/`<CR>`, not two fighting over it.

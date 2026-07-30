@@ -1205,3 +1205,69 @@ not chosen, for the drift reason above. Keeping `Snacks.picker.keymaps()` and on
 `format` — already tried ([#keymaps-picker-format](#keymaps-picker-format)) and still wasn't what
 was being asked for once the actual request (a txt-file-backed search, no preview pane) was
 stated explicitly.
+
+---
+
+## Multi-provider AI: Gemini/OpenAI/Anthropic, chosen independently per feature {#multi-provider-ai}
+
+**Decision.** `settings.json`'s `ai_provider` field changes shape from a single string to
+`{ chat = "...", ghost_text = "..." }`. `lua/plugins/ai.lua` reads `chat` for codecompanion's
+adapter and `ghost_text` (mapped through `MINUET_PROVIDER`, since minuet calls the same backend
+"claude" not "anthropic") for minuet-ai's provider. `nvim-min-setup ai` manages API keys for all
+three providers independently and lets you point chat and ghost text at different ones.
+
+**Context.** Explicit ask: "make sure our setup CLI... handles all the features like setting up
+the AI and its API keys," followed directly by "I should be able to choose multiple AI providers
+using CLI and also add its API keys as well" when a single-active-provider design was floated
+first. `ai_provider` already existed in `DEFAULTS` before this change but was completely unused —
+both plugins were hardcoded to `"gemini"` regardless of its value, a half-finished feature this
+closes out properly rather than leaving as dead config.
+
+**Why per-feature, not one global provider.** codecompanion (chat) and minuet-ai (ghost text) are
+already two separate plugins for two different jobs — chat prioritizes quality (on-demand, latency
+matters less), ghost text prioritizes speed (ambient, latency matters most) — see
+[#two-ai-plugins](#two-ai-plugins). Since they're already independent, a single global "active
+provider" would have been an artificial constraint (e.g. wanting Claude's chat quality but
+Gemini-flash's ghost-text latency) the architecture doesn't actually require.
+
+**Naming/env-var mapping, verified against both plugins' source, not assumed:**
+
+| This config's id | codecompanion adapter | minuet-ai provider | env var (both agree) |
+|---|---|---|---|
+| `gemini` | `gemini` | `gemini` | `GEMINI_API_KEY` |
+| `openai` | `openai` | `openai` | `OPENAI_API_KEY` |
+| `anthropic` | `anthropic` | `claude` | `ANTHROPIC_API_KEY` |
+
+Only minuet's naming diverges (`claude` vs. `anthropic` for the same backend) — both plugins
+otherwise agree on env var names, so `secrets.env`'s shape needed no per-plugin translation, only
+`MINUET_PROVIDER` in `lua/plugins/ai.lua`.
+
+**Model overrides stay Gemini-specific.** The existing `gemini-2.5-pro` (chat) /
+`gemini-2.0-flash` + `thinkingBudget=0` (ghost text) overrides were kept scoped to
+`provider == "gemini"` rather than generalized — they exist because Gemini's own defaults in each
+plugin didn't fit (codecompanion's gemini adapter defaults lighter than wanted for chat; minuet's
+own docs recommend disabling thinking for line completion). OpenAI/Anthropic get each plugin's own
+defaults (`gpt-5.4-nano`/`claude-haiku-4-5` for minuet, each adapter's own default chat model for
+codecompanion) since nothing established those need overriding — inventing tuning without the
+same kind of measured justification the Gemini overrides had would be scope creep, not parity.
+
+**Live key verification, not blind trust.** `nvim-min-setup ai` makes one real, short-timeout
+(6s) authenticated request per provider before saving a key (`GET .../v1beta/models` for Gemini,
+`GET .../v1/models` for OpenAI/Anthropic) — a rejected key is flagged with an explicit "save
+anyway?" instead of silently accepting a typo'd or revoked key and only finding out inside nvim
+later. A network failure (not a rejection) is treated differently: warns and saves anyway, since
+offline isn't evidence the key is bad.
+
+**Backward compatible.** A pre-existing `settings.json` with `ai_provider` as a plain string
+(the old shape) is migrated to `{chat: <value>, ghost_text: <value>}` on load — implemented
+identically on both sides (`lua/config/user_settings.lua` and `bin/nvim-min-setup`), since neither
+can assume the other has already normalized it.
+
+**Alternatives considered.** One global `ai_provider` string with a single "active" concept, just
+extended to 3 values instead of a hardcoded "gemini" — rejected once the per-feature independence
+was recognized as the actually-useful shape, not extra complexity for its own sake. A `.env`-style
+free-form provider list — rejected in favor of a small fixed set (gemini/openai/anthropic) matched
+exactly to what both AI plugins already support well, rather than building a generic plugin
+system for providers nothing here uses yet.
+
+---

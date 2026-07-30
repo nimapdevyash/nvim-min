@@ -14,13 +14,15 @@ referenced by anything in here.
 
 Configuration is deliberately split in two: nvim-min itself (this Lua config — stays minimal,
 never prompts for input at runtime) and `nvim-min-setup` (`bin/nvim-min-setup` — a separate Node
-CLI, built with `@clack/prompts`, that owns all interactive setup: API keys, theme, feature
-toggles). Don't blur this line by adding interactive prompts, settings UIs, or setup wizards to
-the Lua side — that belongs in the CLI, which is allowed to have dependencies and complexity the
-editor itself isn't. `install.sh` at the repo root is the third piece: a bootstrap script that
-installs system requirements, wires up `nvim-min-setup`/`nvims`, and bootstraps nvim itself on a
-fresh clone. All three are independent — nvim never imports, shells out to, or waits on either of
-the other two at runtime.
+CLI, built with `@clack/prompts`, that owns all interactive setup: AI provider + API key, theme,
+feature toggles, plus a `doctor` diagnostic command). Don't blur this line by adding interactive
+prompts, settings UIs, or setup wizards to the Lua side — that belongs in the CLI, which is
+allowed to have dependencies and complexity the editor itself isn't. `install.sh` at the repo
+root is the third piece: a bootstrap script that detects the OS/package manager, installs system
+requirements, wires up `nvim-min-setup`/`nvims`, and bootstraps nvim itself on a fresh clone. All
+three are independent — nvim never imports, shells out to, or waits on either of the other two at
+runtime. Both `install.sh` and `nvim-min-setup` log every run to `~/.cache/nvim-min/` — see "Logs
+& debugging" below before assuming something failed silently.
 
 ## Non-negotiable principles
 
@@ -81,11 +83,17 @@ the other two at runtime.
    `docs/decisions/index.md#treesitter-main` for the full story — the lesson isn't "pin less," it's
    "verify a pin is still correct when something breaks, don't assume the original reasoning still
    holds."
-6. **Never hardcode secrets.** API keys live in `~/.config/nvim-min/user/secrets.env`, written by
-   `nvim-min-setup ai` and loaded into the environment by
-   `require("config.user_settings").load_secrets()` (called first thing in `init.lua`, before
-   plugins load). `user/` is gitignored — never commit a key, and never add a code path that
-   would put one in a tracked file.
+6. **Never hardcode secrets, and never let one reach a log or a URL.** API keys (`GEMINI_API_KEY`/
+   `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` — three independent providers, see #multi-provider-ai)
+   live in `~/.config/nvim-min/user/secrets.env`, written by `nvim-min-setup ai` and loaded into
+   the environment by `require("config.user_settings").load_secrets()` (called first thing in
+   `init.lua`, before plugins load). `user/` is gitignored — never commit a key, and never add a
+   code path that would put one in a tracked file. This extends to the CLI's own debug log
+   (`~/.cache/nvim-min/setup-cli.log`, see "Logs & debugging") — a `logLine` call must never pass
+   a raw key value, only that an event happened (provider + key length, never the string). Prefer
+   an HTTP header over a URL query parameter for a key in any new `verify()`-style network call —
+   Gemini's key was moved off `?key=` specifically because a URL is a more likely place for a
+   secret to leak (network-error messages, proxy logs) than a header.
 7. **Config must survive being deleted or corrupted.** `lua/config/user_settings.lua` always
    falls back to sane defaults if `user/settings.json` is missing or fails to parse — never make
    a plugin's config *require* that file to exist. `nvim-min-setup reset` exists to make "get
@@ -126,53 +134,162 @@ the other two at runtime.
 
 ## Structure
 
+This section is meant to be a complete, accurate map — if you add, remove, or repurpose a file,
+update this section in the same change. It drifting is exactly the kind of thing principle #2
+warns about, just applied to this file instead of the `docs/` site.
+
 ```
-install.sh                    fresh-clone bootstrap: system deps, PATH/alias wiring, nvim
-                               bootstrap, offers to launch nvim-min-setup at the end
-package.json, node_modules/    deps for bin/nvim-min-setup ONLY (@clack/prompts, picocolors) —
+install.sh                    fresh-clone bootstrap: detects OS/package manager (prefers each
+                               distro's own where it's good enough — pacman on Arch for
+                               tree-sitter-cli/lazygit/Neovim itself, brew elsewhere — see
+                               #arch-native-packages), PATH/alias wiring into every shell rc
+                               file present (not one guessed from $SHELL, see
+                               #shell-agnostic-install), nvim bootstrap, offers to launch
+                               nvim-min-setup at the end. Logs its full transcript to
+                               ~/.cache/nvim-min/install.log every run (see "Logs & debugging"
+                               below) — an ERR trap reports the exact step/command/line on failure.
+package.json, node_modules/   deps for bin/nvim-min-setup ONLY (@clack/prompts, picocolors) —
                                gitignored node_modules, installed by install.sh; nvim never
                                touches this
-init.lua                    leader keys → load_secrets() → config.options → config.lazy →
-                             config.keymaps → config.autocmds, in that order (order matters:
-                             secrets must be in the env before any plugin spec evaluates;
-                             lazy needs mapleader set first; keymaps need plugins registered
-                             so lazy-loading `keys = {...}` specs work)
+init.lua                      leader keys → load_secrets() → config.options → config.lazy →
+                               config.keymaps → config.autocmds, in that order (order matters:
+                               secrets must be in the env before any plugin spec evaluates;
+                               lazy needs mapleader set first; keymaps need plugins registered
+                               so lazy-loading `keys = {...}` specs work)
 bin/
-  nvim-min-setup               the config CLI (Node + @clack/prompts) — see decoupling note above
+  nvim-min-setup               the config CLI (Node + @clack/prompts) — see decoupling note above.
+                               Also logs every invocation to ~/.cache/nvim-min/setup-cli.log —
+                               never a key's actual value, only that an event happened (see
+                               "Logs & debugging")
   nvims                        nvm-style picker across every ~/.config/nvim* config
 lua/config/
-  options.lua                 vim.opt, disabled built-ins/providers, diagnostics/fold config
-  keymaps.lua                 ALL keybindings (see principle #2)
-  autocmds.lua                 general-purpose autocmds only — LSP-attach keymaps/autocmds live
-                               in lua/plugins/lsp.lua's config() function, next to the LSP setup
-                               they depend on
-  lazy.lua                    lazy.nvim bootstrap
-  statusline.lua               native statusline, no plugin (see principle #1)
-  terminal.lua                 native floating terminal + LazyGit, no plugin (see principle #1)
-  external.lua                 outsources file preview to kitten icat / xdg-open (see principle #1)
-  user_settings.lua            reads user/settings.json + user/secrets.env; DEFAULTS table here
-                               must stay in sync with DEFAULT_SETTINGS in bin/nvim-min-setup
+  options.lua                  vim.opt, disabled built-ins/providers, diagnostics/fold config
+  keymaps.lua                  ALL keybindings (see principle #3)
+  keymap_search.lua            backs `<leader>?` and the dashboard's `k` — regenerates a plain
+                                key→description list from the live keymap registry every time
+                                it's opened, plus writes it to a real .txt file for browsing
+                                outside nvim (see principle #3 and #keymap-search-txt-export)
+  autocmds.lua                  general-purpose autocmds only — LSP-attach keymaps/autocmds live
+                                in lua/plugins/lsp.lua's config() function, next to the LSP setup
+                                they depend on
+  lazy.lua                     lazy.nvim bootstrap
+  statusline.lua                native statusline, no plugin (see principle #1)
+  terminal.lua                  native floating terminal + LazyGit, no plugin (see principle #1)
+  dashboard.lua                  native start screen (scratch buffer + vim.v.oldfiles + git-root
+                                detection for "recent projects"), no plugin (see principle #1)
+  harpoon.lua                   numbered file marks, persisted per-project to
+                                stdpath("state"), no plugin (see principle #1)
+  external.lua                  outsources file preview to kitten icat / xdg-open (see principle #1)
+  user_settings.lua             reads user/settings.json + user/secrets.env; DEFAULTS table here
+                                must stay in sync with DEFAULTS in bin/nvim-min-setup AND
+                                lua/plugins/ai.lua's expectations — three places, nothing
+                                enforces agreement automatically. `ai_provider` is
+                                `{chat=..., ghost_text=...}` (per-feature, not one global
+                                choice) — a plain-string old shape is migrated on load, on
+                                both the Lua and CLI sides independently.
 lua/plugins/*.lua              one file per concern, each returning a lazy.nvim plugin spec
-                               (or list of specs) — colorscheme.lua and ai.lua read
-                               user_settings at spec-evaluation time to set theme/enabled
-user/                         gitignored, machine-local — settings.json + secrets.env
+                                (or list of specs):
+  editor.lua                    snacks.nvim (explorer + picker + notifier — see below),
+                                mini.icons, mini.pairs, mini.surround
+  lsp.lua                       nvim-lspconfig, mason.nvim/mason-lspconfig, all per-server
+                                config and LspAttach keymaps
+  completion.lua                blink.cmp (pinned 1.*)
+  formatting.lua                conform.nvim
+  git.lua                       gitsigns.nvim
+  treesitter.lua                nvim-treesitter (main branch, needs tree-sitter-cli 0.26+)
+  colorscheme.lua                onedark.nvim; also fixes onedark's own incomplete
+                                `transparent` option (NormalFloat/FloatBorder/Pmenu never
+                                checked it upstream — see #float-transparency)
+  ui.lua                        noice.nvim (floating cmdline/messages) — `routes` sends
+                                ERROR-level notify calls to a distinct, prominent view
+                                instead of the same easy-to-miss popup as routine info (see
+                                #noice-error-prominence; needs editor.lua's
+                                `notifier = {enabled = true}` to actually work, not just the
+                                route existing)
+  markdown.lua                   render-markdown.nvim, lazy-loaded on ft=markdown
+  ai.lua                        codecompanion.nvim (chat) + minuet-ai.nvim (ghost text) —
+                                provider-agnostic, reads `ai_provider.chat`/`.ghost_text`
+                                independently (see #multi-provider-ai)
+user/                          gitignored, machine-local — settings.json + secrets.env
+docs/                          VitePress site — docs/index.md, docs/guide/*.md (one page per
+                                topic), docs/decisions/index.md (the decision log, see
+                                principle #2)
 ```
 
 ## How to test a change
 
-There's no test suite — this is an editor config. Verify with headless Neovim before calling
-something done:
+There's no test suite — this is an editor config. Headless Neovim catches syntax/load errors but
+**does not prove a specific keybinding resolves to a specific implementation** — that gap
+produced a real, shipped regression (see `#keymaps-stale-regression`): `lua/config/keymaps.lua`
+was stuck calling `fzf-lua`/`<cmd>Oil<cr>` (neither installed anymore) for over a dozen
+keybindings, and `bash -n`/`node --check`/a headless `nvim --headless -c quit` all passed the
+entire time, because none of them execute a mapping's actual `rhs`. The only thing that caught it
+was a real interactive session and `:verbose map <key>`.
 
 ```sh
-NVIM_APPNAME=nvim-min nvim --headless -c "quit"          # catches syntax/load errors
+NVIM_APPNAME=nvim-min nvim --headless -c "quit"          # catches syntax/load errors ONLY
 NVIM_APPNAME=nvim-min nvim path/to/real-file.ts           # open a real file, check :LspInfo,
                                                            # :checkhealth vim.lsp, that gd/K/<leader>ca
                                                            # actually work
 ```
 
+**For anything touching keybindings, plugin removal/replacement, or a toggle/UI interaction**,
+verify with a real interactive session, not just headless — a detached `tmux` session is the
+practical way to do this without a human at a keyboard:
+
+```sh
+tmux new-session -d -s t -x 200 -y 50
+tmux send-keys -t t "NVIM_APPNAME=nvim-min nvim" Enter
+sleep 2
+tmux send-keys -t t "<the actual key sequence you're testing>"
+sleep 1
+tmux capture-pane -t t -p                 # read back what's actually on screen
+tmux send-keys -t t ":verbose map <key>" Enter   # confirm WHICH script last set a mapping,
+tmux capture-pane -t t -p                        # not just that *a* mapping exists
+tmux kill-session -t t
+```
+
+`:verbose map <lhs>` is the single most useful command here — it shows the exact `rhs` and which
+file last set it, which is what actually caught the regression above (`:verbose map -` showed
+`<Cmd>Oil<CR>`, "Last set from init.lua", when it should have shown a `snacks.explorer()`
+callback). A `pcall`/API-level headless check (e.g. calling `Snacks.explorer()` directly from a
+`luafile`) only proves the underlying library call works — it does not prove `keymaps.lua` is
+correctly wired to call it, which is exactly where this regression lived.
+
 When changing `lua/plugins/lsp.lua`, test against real `.ts`/`.py`/`.tf` files, not empty
 buffers — inlay hints, eslint autofix-on-save, and schema validation only show up with real
 content.
+
+**When splitting a large uncommitted diff into micro-commits** (reconstructing an intermediate
+file state to isolate one change from another), the working tree ending up correct is a *separate*
+claim from the diff looking correct — `git add`/`git commit` succeeding proves neither. After any
+such reconstruction, diff the final committed state of every touched file against what you
+believe the true final content should be (`git show HEAD:path | diff - <expected>`, or at minimum
+re-grep the whole repo for the specific strings the change was supposed to remove), not just that
+each individual commit's diff looked sensible in isolation.
+
+## Logs & debugging
+
+Both `install.sh` and `nvim-min-setup` write a full, real transcript on every run — check these
+before assuming something failed silently or asking the user to describe what happened:
+
+- `~/.cache/nvim-min/install.log` — `install.sh`'s complete output (this script's own messages
+  and every subcommand's — `npm install`, `pacman`/`apt-get`, the headless nvim bootstrap),
+  overwritten fresh each run, preceded by a header (`uname`, `/etc/os-release`, user, shell). On
+  failure, the script's own `ERR` trap already reports the exact step/command/line — the log has
+  everything around that point too.
+- `~/.cache/nvim-min/setup-cli.log` — `nvim-min-setup`'s append-only log: which command ran, every
+  `settings.json` write, every API key set/cleared (provider + key **length** only, never the
+  value), key-verification results, `doctor`'s full results, and any uncaught error's full stack
+  trace (the terminal only ever shows a short version). **Never grep this file expecting to find
+  an actual key** — that's a deliberate invariant, not an oversight; if you're adding a new
+  `logLine` call, it must never pass a raw secret value through.
+- `nvim-min-setup doctor` — the fastest way to check system state without reading a log at all:
+  system requirements (mirroring what `install.sh` installs) plus a **live verification of every
+  stored API key** (a fast offline format check, then a real request to the provider). This is
+  what should be run first for any "ghost text/chat doesn't work" report — it once took a full
+  interactive session tracing `vim.env.GEMINI_API_KEY` by hand to find a malformed key that
+  `doctor` now catches in one command (see `#doctor-key-verification`).
 
 ## Common tasks
 
@@ -192,5 +309,5 @@ content.
   to both the `DEFAULTS` object in `lua/config/user_settings.lua` *and* the `DEFAULTS` object in
   `bin/nvim-min-setup` (they must match — nothing enforces this automatically), add it as an
   option in `cmdFeatures()`'s `multiselect` in the CLI, and gate the plugin's lazy spec with
-  `enabled = require("config.user_settings").load().features.<name>` (see principle #7 and
+  `enabled = require("config.user_settings").load().features.<name>` (see principle #8 and
   `lua/plugins/ai.lua` for the pattern).

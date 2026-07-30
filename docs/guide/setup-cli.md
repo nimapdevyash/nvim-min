@@ -14,26 +14,40 @@ first-time setup; run it again any time with `cd ~/.config/nvim-min && npm insta
 
 ```
 nvim-min-setup            interactive menu
-nvim-min-setup ai         set your Gemini API key
+nvim-min-setup ai         set an API key, pick which provider chat / ghost text each use
 nvim-min-setup theme      pick a onedark style + transparency
 nvim-min-setup features   turn AI ghost-text / AI chat on or off
-nvim-min-setup status     show current settings (never prints the key back)
-nvim-min-setup reset      restore theme/feature settings to defaults
+nvim-min-setup status     show current settings (never prints a key back)
+nvim-min-setup doctor     check system requirements (rg, fd, lazygit, tree-sitter-cli, ...)
+nvim-min-setup reset      restore settings to defaults (optionally wipe API keys too)
 ```
 
-## AI (Gemini API key)
+## AI (provider + API key)
 
 ```sh
 nvim-min-setup ai
 ```
 
-Prompts for your key (input hidden, never echoed), and writes it to
-`~/.config/nvim-min/user/secrets.env` as `GEMINI_API_KEY=...`, `chmod 600`. Get a key at
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+Two independent things happen here, on purpose:
 
-This file is loaded into the environment by `lua/config/user_settings.lua`, called first thing in
-`init.lua` — before any plugin spec is even evaluated — so codecompanion and minuet-ai see
-`GEMINI_API_KEY` exactly as if you'd exported it yourself.
+1. **Set/replace/clear a key** for Gemini, OpenAI, or Anthropic. You can hold keys for as many
+   providers as you like at once — this just writes to `~/.config/nvim-min/user/secrets.env` as
+   `GEMINI_API_KEY=...` / `OPENAI_API_KEY=...` / `ANTHROPIC_API_KEY=...`, `chmod 600`. Before
+   saving, the CLI makes a real (short-timeout) request to that provider's own API to confirm the
+   key actually works — if the network's unreachable it says so and saves anyway rather than
+   blocking you.
+2. **Choose which provider chat (`codecompanion.nvim`) and ghost text (`minuet-ai.nvim`) each
+   use** — independently. Nothing stops you running Claude for chat and Gemini for ghost text;
+   they're already two separate plugins for two different jobs (quality vs. speed — see
+   [Decision history → Two AI plugins, not one](/decisions/#two-ai-plugins)).
+
+Get a key: [Gemini](https://aistudio.google.com/apikey) ·
+[OpenAI](https://platform.openai.com/api-keys) ·
+[Anthropic](https://console.anthropic.com/settings/keys).
+
+`secrets.env` is loaded into the environment by `lua/config/user_settings.lua`, called first thing
+in `init.lua` — before any plugin spec is even evaluated — so codecompanion and minuet-ai see
+whichever `*_API_KEY` they need exactly as if you'd exported it yourself.
 
 ## Theme
 
@@ -61,12 +75,27 @@ There's a second, session-only lever that's *not* part of the CLI: `<leader>at` 
 toggles ghost text for the current session without touching `settings.json`. Use the CLI for "I
 don't want this loaded, period"; use `<leader>at` for "not right now."
 
+## Doctor
+
+```sh
+nvim-min-setup doctor
+```
+
+Checks the same requirements `install.sh` installs — git, curl, ripgrep, fd, lazygit, Neovim
+0.12+, tree-sitter-cli 0.26+, a working python3 venv+pip, plus whether `settings.json` parses and
+`secrets.env` has the right permissions — and reports each with a clear ✓/✗ instead of you
+discovering a missing binary secondhand, from a confusing error somewhere else. Doesn't fix
+anything itself; re-run `./install.sh` for that.
+
 ## Status and reset
 
 ```sh
-nvim-min-setup status   # current settings + whether a key is set (never the key itself)
-nvim-min-setup reset     # restore settings.json to defaults (the API key is untouched)
+nvim-min-setup status   # current settings + which keys are set (never a key itself)
+nvim-min-setup reset     # restore settings to defaults — optionally wipes API keys too
 ```
+
+`reset` asks explicitly whether you want theme/feature settings reset (API keys kept) or
+everything including every stored key (a second confirmation, since that's the destructive path).
 
 **Nothing here can permanently break the editor.** If `settings.json` goes missing or gets
 corrupted by hand-editing, `lua/config/user_settings.lua` falls back to the exact same defaults
@@ -77,7 +106,7 @@ the CLI ships with — nvim never fails to start over a bad settings file.
 
 | File | Contents | Tracked in git? |
 |---|---|---|
-| `~/.config/nvim-min/user/settings.json` | theme, transparency, feature toggles | No — gitignored |
-| `~/.config/nvim-min/user/secrets.env` | `GEMINI_API_KEY=...` | No — gitignored, `chmod 600` |
+| `~/.config/nvim-min/user/settings.json` | theme, transparency, per-feature AI provider, feature toggles | No — gitignored |
+| `~/.config/nvim-min/user/secrets.env` | `GEMINI_API_KEY=...` / `OPENAI_API_KEY=...` / `ANTHROPIC_API_KEY=...` | No — gitignored, `chmod 600` |
 | `~/.config/nvim-min/bin/nvim-min-setup` | the CLI itself | **Yes** |
 | `~/.config/nvim-min/package.json` | the CLI's own deps (`@clack/prompts`, `picocolors`) | **Yes** (`node_modules/` gitignored) |

@@ -3,8 +3,8 @@
 #
 # What it does, in order:
 #   1. Detects your OS/package manager and installs whatever's missing from
-#      the requirements list (git, curl, tar, a C compiler, fzf, ripgrep,
-#      lazygit, node+npm, jq). Skips anything already present.
+#      the requirements list (git, curl, tar, a C compiler, ripgrep, fd,
+#      lazygit, node+npm). Skips anything already present.
 #   2. Symlinks bin/nvim-min-setup and bin/nvims onto your PATH.
 #   3. Wires the `nv` alias and PATH entry into your shell rc (idempotent —
 #      safe to re-run).
@@ -89,9 +89,23 @@ ensure_tool git      "git"        git    git    git    git    git
 ensure_tool curl     "curl"       curl   curl   curl   curl   curl
 ensure_tool tar      "tar"        tar    tar    tar    gnu-tar tar
 ensure_tool cc       "a C compiler" build-essential gcc base-devel gcc build-base
-ensure_tool fzf      "fzf"        fzf    fzf    fzf    fzf    fzf
 ensure_tool rg       "ripgrep"    ripgrep ripgrep ripgrep ripgrep ripgrep
 ensure_tool npm      "node + npm" nodejs nodejs nodejs node   nodejs
+
+# fd's binary is named `fd` everywhere except Debian/Ubuntu, where an
+# unrelated package already owns that name and apt's fd-find package
+# installs it as `fdfind` instead — `ensure_tool`'s single check-cmd can't
+# express "either name", so this needs its own block (same reason
+# tree-sitter-cli/lazygit below aren't plain ensure_tool calls either).
+# Optional: snacks.nvim's file picker falls back to plain `find` without it.
+if have fd || have fdfind; then
+  skip "fd already installed"
+elif [[ -n "$PKG" ]]; then
+  printf '  Installing fd...\n'
+  pkg_install fd-find fd-find fd fd fd && ok "fd installed" || warn "fd install failed (optional — find-files falls back to a slower search)"
+else
+  warn "fd not found — optional, find-files falls back to a slower search without it"
+fi
 
 # nvim-treesitter needs a *real* tree-sitter-cli 0.26+ to compile parsers.
 # Distro packages are usually far too old (Ubuntu/Debian ship 0.20.x) —
@@ -324,9 +338,9 @@ cat <<EOF
 
 EOF
 
-read -r -p "Customize your setup now (Gemini API key, theme)? [y/N]: " ans
+read -r -p "Customize your setup now (AI provider + API key, theme)? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy] ]]; then
   "$HOME/.local/bin/nvim-min-setup"
 else
-  bold "You can run 'nvim-min-setup' any time to configure your AI key, theme, or feature toggles."
+  bold "You can run 'nvim-min-setup' any time to configure your AI provider/key, theme, or feature toggles."
 fi

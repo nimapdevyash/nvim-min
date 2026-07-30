@@ -1271,3 +1271,27 @@ exactly to what both AI plugins already support well, rather than building a gen
 system for providers nothing here uses yet.
 
 ---
+
+## `nvim-min-setup doctor`: a real preflight check, not just install.sh's job repeated blind faith {#setup-cli-doctor}
+
+**Decision.** New `nvim-min-setup doctor` command: checks git/curl/ripgrep/fd/lazygit/Neovim
+0.12+/tree-sitter-cli 0.26+/python3-venv+pip/brew (mirroring `install.sh`'s own requirement list),
+plus whether `settings.json` parses and `secrets.env` has `0600` permissions.
+
+**Context.** Same "foolproof" ask that drove the multi-provider work. `install.sh` already checks
+and *installs* these on a fresh clone, but there was no way to re-verify system state afterward —
+if a tool got uninstalled, a permission got changed by hand, or someone's `PATH` changed, the only
+way to find out was a confusing failure somewhere else (Mason retry-failing silently, `<leader>ff`
+using a slower fallback with no explanation, etc). `doctor` surfaces the same facts on demand,
+without re-running any installation.
+
+**Why it doesn't fix anything itself.** Deliberately read-only — `install.sh` already owns
+"detect + install," and duplicating that logic in the CLI would be two places that could drift
+out of sync about what "fixed" means for a given tool (e.g. `install.sh`'s brew-preference logic
+for tree-sitter-cli/python). `doctor` just points back at `./install.sh` when something's missing.
+
+**Verified.** Ran on this machine: all checks report a real, currently-true result (`fd`
+installed, `tree-sitter-cli 0.26`, Neovim 0.12.4, working venv+pip, `brew` present) — not
+hand-waved, actually executed and read back.
+
+---

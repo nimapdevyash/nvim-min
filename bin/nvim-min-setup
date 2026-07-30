@@ -6,6 +6,7 @@
 // files (settings.json, secrets.env) that lua/config/user_settings.lua reads
 // on startup; that file format is the entire contract between the two, and
 // it never changes shape without both sides being updated together.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,9 +20,61 @@ const SECRETS_FILE = path.join(SETTINGS_DIR, "secrets.env");
 const DEFAULTS = {
   theme: "dark",
   transparent: true,
-  ai_provider: "gemini",
+  // Independent per feature — must match lua/config/user_settings.lua's
+  // DEFAULTS shape exactly, nothing enforces this automatically.
+  ai_provider: { chat: "gemini", ghost_text: "gemini" },
   features: { ghost_text: true, ai_chat: true },
 };
+
+// Keep in sync with lua/plugins/ai.lua's MINUET_PROVIDER map and
+// lua/config/user_settings.lua's DEFAULTS comment — three places that all
+// need to agree on the set of valid provider ids, nothing enforces this
+// automatically (same class of contract as the settings.json shape itself).
+const PROVIDERS = {
+  gemini: {
+    label: "Gemini",
+    envVar: "GEMINI_API_KEY",
+    getKeyUrl: "https://aistudio.google.com/apikey",
+    async verify(key) {
+      const res = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+      );
+      return res.status === 200;
+    },
+  },
+  openai: {
+    label: "OpenAI",
+    envVar: "OPENAI_API_KEY",
+    getKeyUrl: "https://platform.openai.com/api-keys",
+    async verify(key) {
+      const res = await fetchWithTimeout("https://api.openai.com/v1/models", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return res.status === 200;
+    },
+  },
+  anthropic: {
+    label: "Anthropic (Claude)",
+    envVar: "ANTHROPIC_API_KEY",
+    getKeyUrl: "https://console.anthropic.com/settings/keys",
+    async verify(key) {
+      const res = await fetchWithTimeout("https://api.anthropic.com/v1/models", {
+        headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      });
+      return res.status === 200;
+    },
+  },
+};
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 6000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function ensureDir() {
   fs.mkdirSync(SETTINGS_DIR, { recursive: true, mode: 0o700 });
@@ -30,9 +83,26 @@ function ensureDir() {
 function loadSettings() {
   try {
     const decoded = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8"));
+
+    // Migrate a pre-multi-provider settings.json (ai_provider as a single
+    // string) into the current per-feature shape — mirrors the same
+    // migration in lua/config/user_settings.lua, both sides need to agree.
+    let aiProvider = decoded.ai_provider;
+    if (typeof aiProvider === "string") aiProvider = { chat: aiProvider, ghost_text: aiProvider };
+    aiProvider = { ...DEFAULTS.ai_provider, ...(aiProvider ?? {}) };
+    // Guards against an unrecognized/corrupted value per feature — an
+    // unrecognized id silently falling through to Lua would fall back there
+    // too (see lua/plugins/colorscheme.lua's VALID_STYLES pattern), but
+    // catching it here means `status` shows the real problem instead of a
+    // plausible-looking bad value.
+    for (const feat of Object.keys(DEFAULTS.ai_provider)) {
+      if (!PROVIDERS[aiProvider[feat]]) aiProvider[feat] = DEFAULTS.ai_provider[feat];
+    }
+
     return {
       ...structuredClone(DEFAULTS),
       ...decoded,
+      ai_provider: aiProvider,
       features: { ...DEFAULTS.features, ...(decoded.features ?? {}) },
     };
   } catch {
@@ -47,28 +117,33 @@ function writeSettings(settings) {
   fs.renameSync(tmp, SETTINGS_FILE);
 }
 
-function hasApiKey() {
+function readSecretsLines() {
   try {
-    return /^GEMINI_API_KEY=.+/m.test(fs.readFileSync(SECRETS_FILE, "utf8"));
+    return fs.readFileSync(SECRETS_FILE, "utf8").split("\n").filter(Boolean);
   } catch {
-    return false;
+    return [];
   }
 }
 
-function setApiKey(key) {
+function hasApiKey(envVar) {
+  return readSecretsLines().some((l) => l.startsWith(`${envVar}=`));
+}
+
+function setApiKey(envVar, key) {
   ensureDir();
-  let lines = [];
-  try {
-    lines = fs
-      .readFileSync(SECRETS_FILE, "utf8")
-      .split("\n")
-      .filter((l) => l && !l.startsWith("GEMINI_API_KEY="));
-  } catch {
-    // no existing file yet — fine
-  }
-  lines.push(`GEMINI_API_KEY=${key}`);
+  const lines = readSecretsLines().filter((l) => !l.startsWith(`${envVar}=`));
+  lines.push(`${envVar}=${key}`);
   const tmp = `${SECRETS_FILE}.tmp`;
   fs.writeFileSync(tmp, `${lines.join("\n")}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, SECRETS_FILE);
+  fs.chmodSync(SECRETS_FILE, 0o600);
+}
+
+function clearApiKey(envVar) {
+  const lines = readSecretsLines().filter((l) => !l.startsWith(`${envVar}=`));
+  ensureDir();
+  const tmp = `${SECRETS_FILE}.tmp`;
+  fs.writeFileSync(tmp, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
   fs.renameSync(tmp, SECRETS_FILE);
   fs.chmodSync(SECRETS_FILE, 0o600);
 }
@@ -85,19 +160,272 @@ function checkCancel(value) {
 
 const RESTART_HINT = pc.dim("Restart nvim (or `nv`) to apply.");
 
-async function cmdAi() {
-  p.intro(pc.bgCyan(pc.black(" nvim-min · AI ")));
-  p.note(`Get one at ${pc.cyan("https://aistudio.google.com/apikey")}`, "Gemini API key");
-  const key = checkCancel(
-    await p.password({ message: "Paste your Gemini API key", validate: () => undefined }),
+// ---- doctor: system-requirements checks, mirroring install.sh's own list --
+
+function commandExists(cmd) {
+  try {
+    execFileSync(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function versionOf(cmd, args, pattern) {
+  try {
+    const out = execFileSync(cmd, args, { encoding: "utf8" });
+    return out.match(pattern)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function venvHasPip() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nvim-min-venv-"));
+  try {
+    execFileSync("python3", ["-m", "venv", tmp], { stdio: "ignore" });
+    return fs.existsSync(path.join(tmp, "bin", "pip"));
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function runDoctorChecks() {
+  const checks = [];
+  const push = (name, ok, hint) => checks.push({ name, ok, hint });
+
+  push("git", commandExists("git"));
+  push("curl", commandExists("curl"));
+  push("ripgrep (rg)", commandExists("rg"), "needed for find-files/grep — install: https://github.com/BurntSushi/ripgrep");
+  push(
+    "fd",
+    commandExists("fd") || commandExists("fdfind"),
+    "optional, but find-files falls back to a slower search without it",
   );
-  if (!key) {
-    p.outro(pc.yellow("Empty key, nothing changed."));
+  push("lazygit", commandExists("lazygit"), "needed for <leader>gg — https://github.com/jesseduffield/lazygit");
+
+  const nvimVersion = versionOf("nvim", ["--version"], /\d+\.\d+\.\d+/);
+  if (nvimVersion) {
+    const [major, minor] = nvimVersion.split(".").map(Number);
+    push(`Neovim ${nvimVersion}`, major > 0 || minor >= 12, "nvim-min needs Neovim 0.12+");
+  } else {
+    push("Neovim", false, "not found on PATH");
+  }
+
+  const tsVersion = versionOf("tree-sitter", ["--version"], /\d+\.\d+/);
+  push(
+    tsVersion ? `tree-sitter-cli ${tsVersion}` : "tree-sitter-cli",
+    tsVersion ? Number(tsVersion.split(".")[1]) >= 26 : false,
+    "needed to build treesitter parsers (main branch) — needs 0.26+, `brew install tree-sitter-cli` is the reliable path",
+  );
+
+  push(
+    "python3 venv + pip",
+    commandExists("python3") && venvHasPip(),
+    "needed for basedpyright/ruff to install via Mason — see README.md requirements",
+  );
+
+  push("brew", commandExists("brew"), "optional, but the most reliable installer for tree-sitter-cli/lazygit/python on this machine");
+
+  try {
+    const decoded = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8"));
+    push("settings.json", typeof decoded === "object" && decoded !== null, "exists but isn't valid JSON — nvim will fall back to defaults");
+  } catch (e) {
+    push("settings.json", e.code === "ENOENT", e.code === "ENOENT" ? undefined : "exists but failed to parse — nvim falls back to defaults either way");
+  }
+
+  try {
+    const mode = fs.statSync(SECRETS_FILE).mode & 0o777;
+    push("secrets.env permissions", mode === 0o600, `expected 0600, got 0${mode.toString(8)} — run \`chmod 600 ${SECRETS_FILE}\``);
+  } catch {
+    push("secrets.env permissions", true); // doesn't exist yet — nothing to check, not a failure
+  }
+
+  return checks;
+}
+
+async function cmdDoctor() {
+  p.intro(pc.bgGreen(pc.black(" nvim-min · Doctor ")));
+  const s = p.spinner();
+  s.start("Checking your system");
+  const checks = runDoctorChecks();
+  s.stop("Done");
+
+  let failures = 0;
+  for (const c of checks) {
+    if (c.ok) {
+      p.log.success(c.name);
+    } else {
+      failures++;
+      p.log.warn(`${c.name}${c.hint ? pc.dim(` — ${c.hint}`) : ""}`);
+    }
+  }
+
+  if (failures === 0) {
+    p.outro(pc.green("Everything checks out."));
+  } else {
+    p.outro(
+      `${pc.yellow(`${failures} thing${failures === 1 ? "" : "s"} need attention`)} — ` +
+        `re-run ${pc.cyan("./install.sh")} to fix most of these automatically.`,
+    );
+  }
+}
+
+// ---- ai ---------------------------------------------------------------------
+
+const AI_FEATURES = { chat: "Chat (codecompanion.nvim)", ghost_text: "Ghost text (minuet-ai.nvim)" };
+
+function statusLines(settings) {
+  return [
+    ...Object.entries(PROVIDERS).map(
+      ([id, meta]) => `${hasApiKey(meta.envVar) ? pc.green("●") : pc.dim("○")} ${meta.label} — ${hasApiKey(meta.envVar) ? pc.green("key set") : pc.dim("no key")}`,
+    ),
+    "",
+    ...Object.entries(AI_FEATURES).map(
+      ([feat, label]) => `${pc.bold(label)}: ${PROVIDERS[settings.ai_provider[feat]].label}`,
+    ),
+  ].join("\n");
+}
+
+async function cmdAi() {
+  const settings = loadSettings();
+  p.intro(pc.bgCyan(pc.black(" nvim-min · AI ")));
+  p.note(statusLines(settings), "Current status");
+
+  // You can hold API keys for as many providers as you like — chat and
+  // ghost text each pick independently which one to actually use (see
+  // lua/plugins/ai.lua), so "set a key" and "use this provider for X" are
+  // two separate, composable actions rather than one combined flow.
+  const action = checkCancel(
+    await p.select({
+      message: "What do you want to do?",
+      options: [
+        { value: "key", label: "Set / replace / clear an API key" },
+        { value: "chat", label: `Choose the provider for ${AI_FEATURES.chat}`, hint: PROVIDERS[settings.ai_provider.chat].label },
+        { value: "ghost_text", label: `Choose the provider for ${AI_FEATURES.ghost_text}`, hint: PROVIDERS[settings.ai_provider.ghost_text].label },
+      ],
+    }),
+  );
+
+  if (action === "chat" || action === "ghost_text") {
+    const providerId = checkCancel(
+      await p.select({
+        message: `Provider for ${AI_FEATURES[action]}`,
+        initialValue: settings.ai_provider[action],
+        options: Object.entries(PROVIDERS).map(([id, meta]) => ({
+          value: id,
+          label: meta.label,
+          hint: hasApiKey(meta.envVar) ? "key set" : "no key yet",
+        })),
+      }),
+    );
+    if (!hasApiKey(PROVIDERS[providerId].envVar)) {
+      p.log.warn(`No ${PROVIDERS[providerId].label} key set yet — this will fail until you set one.`);
+    }
+    writeSettings({ ...settings, ai_provider: { ...settings.ai_provider, [action]: providerId } });
+    p.outro(`${pc.green(`${AI_FEATURES[action]} now uses ${PROVIDERS[providerId].label}.`)} ${RESTART_HINT}`);
     return;
   }
-  setApiKey(key);
+
+  // action === "key"
+  const providerId = checkCancel(
+    await p.select({
+      message: "Which provider's key?",
+      options: Object.entries(PROVIDERS).map(([id, meta]) => ({
+        value: id,
+        label: meta.label,
+        hint: hasApiKey(meta.envVar) ? "key set" : "no key",
+      })),
+    }),
+  );
+  const provider = PROVIDERS[providerId];
+
+  const keyAction = checkCancel(
+    await p.select({
+      message: `${provider.label}`,
+      options: [
+        { value: "set", label: hasApiKey(provider.envVar) ? "Replace API key" : "Set API key" },
+        ...(hasApiKey(provider.envVar) ? [{ value: "clear", label: "Clear API key" }] : []),
+      ],
+    }),
+  );
+
+  if (keyAction === "clear") {
+    const usedBy = Object.entries(settings.ai_provider)
+      .filter(([, id]) => id === providerId)
+      .map(([feat]) => AI_FEATURES[feat]);
+    const confirmed = checkCancel(
+      await p.confirm({
+        message:
+          `Remove the stored ${provider.label} key?` +
+          (usedBy.length ? ` ${pc.yellow(`${usedBy.join(" and ")} currently use it and will start failing.`)}` : ""),
+        initialValue: false,
+      }),
+    );
+    if (confirmed) {
+      clearApiKey(provider.envVar);
+      p.outro(pc.green("Removed."));
+    } else {
+      p.outro("Cancelled.");
+    }
+    return;
+  }
+
+  // keyAction === "set"
+  p.note(`Get one at ${pc.cyan(provider.getKeyUrl)}`, `${provider.label} API key`);
+  const key = checkCancel(
+    await p.password({
+      message: `Paste your ${provider.label} API key`,
+      validate: (value) => (value && value.trim().length > 0 ? undefined : "Can't be empty"),
+    }),
+  );
+
+  const s = p.spinner();
+  s.start("Verifying key");
+  let verified = null;
+  try {
+    verified = await provider.verify(key.trim());
+  } catch {
+    verified = null; // network error / offline — don't block on this
+  }
+  if (verified === true) {
+    s.stop(pc.green("Key verified — the provider accepted it."));
+  } else if (verified === false) {
+    s.stop(pc.red("The provider rejected this key (likely invalid or revoked)."));
+    const saveAnyway = checkCancel(
+      await p.confirm({ message: "Save it anyway?", initialValue: false }),
+    );
+    if (!saveAnyway) {
+      p.outro("Not saved.");
+      return;
+    }
+  } else {
+    s.stop(pc.yellow("Couldn't verify (offline, or the provider's API changed) — saving anyway."));
+  }
+
+  setApiKey(provider.envVar, key.trim());
+
+  const notAlreadyUsing = Object.entries(AI_FEATURES).filter(([feat]) => settings.ai_provider[feat] !== providerId);
+  let newAiProvider = settings.ai_provider;
+  if (notAlreadyUsing.length > 0) {
+    const useFor = checkCancel(
+      await p.multiselect({
+        message: `Use ${provider.label} for... (space to toggle, enter to confirm — leave empty to just store the key)`,
+        required: false,
+        options: notAlreadyUsing.map(([feat, label]) => ({ value: feat, label })),
+      }),
+    );
+    newAiProvider = { ...settings.ai_provider };
+    for (const feat of useFor) newAiProvider[feat] = providerId;
+  }
+  writeSettings({ ...settings, ai_provider: newAiProvider });
+
   p.outro(`${pc.green("Saved.")} ${RESTART_HINT}`);
 }
+
+// ---- theme / features / status / reset --------------------------------------
 
 const ONEDARK_STYLES = ["dark", "darker", "cool", "deep", "warm", "warmer", "light"];
 
@@ -108,8 +436,6 @@ async function cmdTheme() {
   const style = checkCancel(
     await p.select({
       message: "onedark.nvim style",
-      // Guards against a settings.json written before this config switched
-      // from catppuccin to onedark (old flavour names aren't valid here).
       initialValue: ONEDARK_STYLES.includes(settings.theme) ? settings.theme : "dark",
       options: [
         { value: "dark", label: "Dark", hint: "default" },
@@ -164,20 +490,54 @@ async function cmdFeatures() {
 async function cmdStatus() {
   const settings = loadSettings();
   p.intro(pc.bgWhite(pc.black(" nvim-min · Status ")));
-  p.note(JSON.stringify(settings, null, 2), "settings.json");
-  if (hasApiKey()) {
-    p.log.success(`Gemini API key: set (in ${SECRETS_FILE})`);
-  } else {
-    p.log.warn("Gemini API key: NOT set — run `nvim-min-setup ai`");
-  }
-  p.outro("");
+
+  const lines = [
+    `${pc.bold("Theme")}       ${settings.theme}${settings.transparent ? pc.dim("  (transparent)") : ""}`,
+    `${pc.bold("Ghost text")}  ${settings.features.ghost_text ? pc.green("on") : pc.dim("off")} ${pc.dim(`— ${PROVIDERS[settings.ai_provider.ghost_text].label}`)}`,
+    `${pc.bold("AI chat")}     ${settings.features.ai_chat ? pc.green("on") : pc.dim("off")} ${pc.dim(`— ${PROVIDERS[settings.ai_provider.chat].label}`)}`,
+    "",
+    pc.bold("API keys"),
+    ...Object.entries(PROVIDERS).map(
+      ([, meta]) => `  ${meta.label.padEnd(20)} ${hasApiKey(meta.envVar) ? pc.green("set") : pc.dim("not set")}`,
+    ),
+  ];
+  p.note(lines.join("\n"), "settings");
+  p.outro(`${pc.dim(SETTINGS_FILE)}`);
 }
 
 async function cmdReset() {
   p.intro(pc.bgRed(pc.white(" nvim-min · Reset ")));
+
+  const scope = checkCancel(
+    await p.select({
+      message: "What do you want to reset?",
+      options: [
+        { value: "settings", label: "Theme + feature settings", hint: "API keys are kept" },
+        { value: "all", label: "Everything, including all API keys", hint: "destructive" },
+      ],
+    }),
+  );
+
+  if (scope === "all") {
+    const sure = checkCancel(
+      await p.confirm({
+        message: pc.red("This deletes every stored API key. Are you sure?"),
+        initialValue: false,
+      }),
+    );
+    if (!sure) {
+      p.outro("Cancelled.");
+      return;
+    }
+    for (const meta of Object.values(PROVIDERS)) clearApiKey(meta.envVar);
+    writeSettings(structuredClone(DEFAULTS));
+    p.outro(pc.green("Reset to defaults, all API keys removed."));
+    return;
+  }
+
   const proceed = checkCancel(
     await p.confirm({
-      message: "Reset theme/feature settings to defaults? (your API key is kept)",
+      message: "Reset theme/feature settings to defaults? (API keys are kept)",
       initialValue: false,
     }),
   );
@@ -195,11 +555,12 @@ ${pc.bold("nvim-min-setup")} — configure nvim-min without touching its Lua con
 
 Usage:
   nvim-min-setup            interactive menu
-  nvim-min-setup ai         set your Gemini API key
+  nvim-min-setup ai         set an API key, switch providers (gemini/openai/anthropic)
   nvim-min-setup theme      pick a onedark style + transparency
   nvim-min-setup features   toggle ghost-text / AI chat on or off
-  nvim-min-setup status     show current settings (never prints the key)
-  nvim-min-setup reset      restore theme/feature settings to defaults
+  nvim-min-setup status     show current settings (never prints a key)
+  nvim-min-setup doctor     check system requirements (rg, fd, lazygit, tree-sitter-cli, ...)
+  nvim-min-setup reset      restore settings to defaults (optionally wipe API keys too)
   nvim-min-setup help       this message
 `);
 }
@@ -214,6 +575,8 @@ async function run(cmd) {
       return cmdFeatures();
     case "status":
       return cmdStatus();
+    case "doctor":
+      return cmdDoctor();
     case "reset":
       return cmdReset();
     default:
@@ -229,10 +592,11 @@ async function mainMenu() {
     await p.select({
       message: "What would you like to configure?",
       options: [
-        { value: "ai", label: "AI", hint: "Gemini API key" },
+        { value: "ai", label: "AI", hint: "provider + API key" },
         { value: "theme", label: "Theme", hint: "onedark style + transparency" },
         { value: "features", label: "Features", hint: "toggle AI chat / ghost text" },
         { value: "status", label: "Status", hint: "show current settings" },
+        { value: "doctor", label: "Doctor", hint: "check system requirements" },
         { value: "reset", label: "Reset", hint: "restore defaults" },
         { value: "quit", label: "Quit" },
       ],
@@ -247,11 +611,22 @@ async function mainMenu() {
   await mainMenu();
 }
 
-const cmd = process.argv[2];
-if (!cmd) {
-  await mainMenu();
-} else if (cmd === "help" || cmd === "-h" || cmd === "--help") {
-  printHelp();
-} else {
-  await run(cmd);
+async function main() {
+  const cmd = process.argv[2];
+  if (!cmd) {
+    await mainMenu();
+  } else if (cmd === "help" || cmd === "-h" || cmd === "--help") {
+    printHelp();
+  } else {
+    await run(cmd);
+  }
 }
+
+main().catch((err) => {
+  // A crash here should never look like a Node stack trace — this tool's
+  // whole point is being the friendly, foolproof side of the config.
+  console.error(`\n${pc.red("✗")} ${pc.bold("nvim-min-setup hit an unexpected error:")}`);
+  console.error(pc.dim(err?.message ?? String(err)));
+  console.error(pc.dim("\nIf this keeps happening, please open an issue with the command you ran."));
+  process.exitCode = 1;
+});

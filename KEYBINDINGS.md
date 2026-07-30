@@ -137,7 +137,7 @@ Numbered, persisted per-project (keyed by cwd, survives restarts) — see `lua/c
 | `<C-\>` | Toggle floating terminal |
 | `<Esc>` (terminal mode) | Exit terminal mode |
 
-## AI chat (codecompanion, Gemini)
+## AI chat (codecompanion — Gemini/OpenAI/Anthropic)
 
 | Key | Action |
 |---|---|
@@ -147,7 +147,7 @@ Numbered, persisted per-project (keyed by cwd, survives restarts) — see `lua/c
 | `<leader>ai` | Inline prompt (type a task, `<cr>`) |
 | `<leader>ax` | Close chat input (stop insert, leave chat buffer open) |
 
-## AI ghost text (minuet-ai, Gemini)
+## AI ghost text (minuet-ai — Gemini/OpenAI/Anthropic)
 
 Inline Copilot-style suggestions. Auto-triggers only in the languages this config targets — see
 README.md → "AI ghost text" for the exact list.

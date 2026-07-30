@@ -53,9 +53,15 @@ the other two at runtime.
    a doc page reference something this change just renamed, removed, or contradicted?
 3. **`lua/config/keymaps.lua` is the single source of truth for keybindings.** No which-key or
    similar popup plugin — ever. New keybindings go in that one file, grouped under the existing
-   section headers, with a `desc` on every mapping (this is what makes `<leader>?` / snacks.picker's
-   keymap picker useful — it reads `desc`). Update `KEYBINDINGS.md` to match whenever
+   section headers, with a `desc` on every mapping. Update `KEYBINDINGS.md` to match whenever
    `keymaps.lua` changes; it's documentation, not the source of truth, and drifting is a bug.
+   `<leader>?` / the dashboard's `k` action (`lua/config/keymap_search.lua`) are a **different**
+   case: they regenerate a key→description list from the live keymap registry
+   (`vim.api.nvim_get_keymap`) fresh every time they're opened, rather than reading a hand-written
+   file — so there is nothing to keep in sync there, by design (see
+   `docs/decisions/index.md#keymap-search-txt-export`). Don't add a manual-sync step for it; if a
+   new keymap ever doesn't show up in that search, the bug is a missing/empty `desc` on the mapping
+   itself, not a stale export.
 4. **Prefer native Neovim APIs over plugin frameworks.** LSP servers are enabled with
    `vim.lsp.config()` / `vim.lsp.enable()` (Neovim 0.11+), never `require('lspconfig').setup{}`
    (deprecated upstream, shows warnings). Check `:h lsp-config` when in doubt.

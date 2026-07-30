@@ -39,7 +39,7 @@ reference:
 
 - Neovim **0.12+**
 - `git`, `curl`, `tar`, a C compiler (`cc`) — for building treesitter parsers
-- [`fzf`](https://github.com/junegunn/fzf), [`ripgrep`](https://github.com/BurntSushi/ripgrep) — fuzzy finding / grep
+- [`ripgrep`](https://github.com/BurntSushi/ripgrep), [`fd`](https://github.com/sharkdp/fd) (optional but recommended) — file listing / grep for the fuzzy finder and explorer
 - [`lazygit`](https://github.com/jesseduffield/lazygit) — `<leader>gg`
 - `node` + `npm` — most LSP servers/formatters install through Mason via npm; also runs the setup CLI
 - Python's `venv` module (on Debian/Ubuntu, a separate `python3-venv` package) — needed for the
@@ -137,9 +137,10 @@ that reimplementing it natively would be a net loss — noted per row.
 | Completion | [blink.cmp](https://github.com/saghen/blink.cmp) (`1.*`) | Neovim 0.11+ *can* do native LSP-driven completion (`vim.lsp.completion.enable`), but merging LSP+path+buffer into one fuzzy-ranked list needs real glue code, and blink's precompiled matcher (0.5–4ms/keystroke) would beat a hand-rolled version anyway. Pinned to stable `1.*` — v2 is an active rewrite needing an extra `blink.lib` dependency |
 | Formatting | [conform.nvim](https://github.com/stevearc/conform.nvim) | `vim.lsp.buf.format()` alone only formats via whatever the LSP server implements — vtsls's formatting is far weaker than prettier, and eslint's LSP doesn't format at all |
 | Git signs | [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) | No native git gutter/hunk/blame support |
-| Fuzzy finder | [fzf-lua](https://github.com/ibhagwan/fzf-lua) | No native fuzzy-match UI; uses the `fzf` binary directly, lighter than Telescope |
-| File manager | [oil.nvim](https://github.com/stevearc/oil.nvim) | Native netrw exists but is slow and clunky; oil is small and meaningfully better |
+| Fuzzy finder + file explorer | [snacks.nvim](https://github.com/folke/snacks.nvim) (`picker` + `explorer`) | No native fuzzy-match UI or tree explorer. One engine for both — explorer is a `picker` source under the hood — instead of running a separate finder plugin alongside it; replaced fzf-lua and oil.nvim, see [decision history](docs/decisions/index.md#snacks-picker-migration) |
+| File icons | [mini.icons](https://github.com/nvim-mini/mini.icons) | No native per-filetype icon glyphs; needed for the explorer/picker to be scannable at a glance. Cut once already (see native-replacements table below) and reintroduced here for this specific capability gap, not general decoration |
 | Pairs/surround | [mini.pairs](https://github.com/nvim-mini/mini.pairs) / [mini.surround](https://github.com/nvim-mini/mini.surround) | No native auto-pairs or surround-text-object support |
+| Markdown rendering | [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim) | Treesitter highlights markdown *syntax*; it doesn't reflow tables, render checkboxes, or hide `#`/backtick markup — that's a real rendering step, not a native option |
 | AI chat (Gemini) | [codecompanion.nvim](https://github.com/olimorris/codecompanion.nvim) | The whole point — no native LLM integration exists. Toggle: `nvim-min-setup features` |
 | AI ghost text (Gemini) | [minuet-ai.nvim](https://github.com/milanglacier/minuet-ai.nvim) | Copilot-style inline suggestions; needs its own provider glue no native completion has. Toggle: `nvim-min-setup features` |
 
@@ -151,11 +152,11 @@ that reimplementing it natively would be a net loss — noted per row.
 | toggleterm.nvim | `nvim_open_win` + `jobstart(cmd, {term=true})`, ~50 lines, same "toggle keeps the process alive" behavior | [`lua/config/terminal.lua`](lua/config/terminal.lua) |
 | mason-tool-installer.nvim | Direct `mason-registry` calls | `lua/plugins/lsp.lua` |
 | alpha.nvim / dashboard.nvim / snacks dashboard | A scratch buffer + `vim.v.oldfiles`, ~180 lines | [`lua/config/dashboard.lua`](lua/config/dashboard.lua) |
-| harpoon.nvim | JSON file per project (`stdpath("state")`) + `fzf-lua.fzf_exec` for the searchable list, ~100 lines | [`lua/config/harpoon.lua`](lua/config/harpoon.lua) |
-| which-key.nvim | `keymaps.lua` + `<leader>?` (fzf-lua's live keymap picker) | [KEYBINDINGS.md](KEYBINDINGS.md) |
+| harpoon.nvim | JSON file per project (`stdpath("state")`) + `snacks.picker.pick` for the searchable list, ~100 lines | [`lua/config/harpoon.lua`](lua/config/harpoon.lua) |
+| which-key.nvim | `keymaps.lua` + `<leader>?` (snacks.picker's live keymap picker) | [KEYBINDINGS.md](KEYBINDINGS.md) |
 | Comment.nvim | Neovim's built-in `gc`/`gcc` | — |
 | indent-blankline.nvim | Not replaced — just cut. Visual only, and repaints on every cursor move | — |
-| nvim-tree / neo-tree | oil.nvim (see table above — still a plugin, just a smaller/faster one than netrw-replacements usually are) | — |
+| nvim-tree / neo-tree | oil.nvim, then snacks.nvim explorer (see table above — both still plugins, chosen over the netrw-replacement alternatives for being smaller/faster or more feature-rich respectively) | — |
 
 ## Performance notes (Zed-inspired)
 

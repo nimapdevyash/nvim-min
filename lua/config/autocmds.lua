@@ -88,3 +88,20 @@ autocmd("VimEnter", {
 })
 
 vim.api.nvim_create_user_command("Dashboard", function() require("config.dashboard").open() end, {})
+
+-- noice.nvim takes over vim.notify unconditionally once it loads, discarding
+-- the plain wrapper init.lua installed — switch the error log to noice's own
+-- message manager instead, right as noice finishes loading (its `config()`
+-- runs synchronously before this event fires, see docs/decisions/index.md
+-- #centralized-error-log for why re-wrapping vim.notify itself doesn't work
+-- here).
+vim.api.nvim_create_autocmd("User", {
+  pattern = "LazyLoad",
+  callback = function(ev)
+    if ev.data == "noice.nvim" then require("config.error_log").wrap_noice() end
+  end,
+})
+
+vim.api.nvim_create_user_command("NvimMinErrors", function()
+  vim.cmd("tabnew " .. require("config.error_log").log_path)
+end, { desc = "Open the centralized error/warning log" })

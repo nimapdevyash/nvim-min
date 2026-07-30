@@ -290,6 +290,15 @@ before assuming something failed silently or asking the user to describe what ha
   what should be run first for any "ghost text/chat doesn't work" report — it once took a full
   interactive session tracing `vim.env.GEMINI_API_KEY` by hand to find a malformed key that
   `doctor` now catches in one command (see `#doctor-key-verification`).
+- `~/.local/state/nvim-min/nvim-min/errors.log` — every ERROR/WARN that passes through
+  `vim.notify` inside Neovim itself (plugin errors, LSP client notices, AI provider failures),
+  append-only, full message text. Separate from the two logs above, which only cover the shell
+  installer and the setup CLI — this one's for runtime problems *inside* the editor. Open it
+  quickly with `:NvimMinErrors`. See `lua/config/error_log.lua` and
+  `#centralized-error-log` for why this hooks noice.nvim's message manager instead of `vim.notify`
+  directly once noice loads (wrapping `vim.notify` itself after noice takes it over triggers
+  noice's own watchdog, which treats that as a misconfigured-plugin bug and complains loudly,
+  repeatedly).
 
 ## Common tasks
 

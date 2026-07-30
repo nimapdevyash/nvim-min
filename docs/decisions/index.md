@@ -1597,3 +1597,53 @@ keys) while failing our own stricter offline pre-check was the direct symptom.
 **Verified**: isolated regex test against the real stored key (length/prefix only, value never
 printed) confirms `looksValid` now returns `true`; a live `doctor` run now reports `Gemini key=ok`
 where it previously reported a hard failure on the identical stored key.
+
+---
+
+## Centralized error log for Neovim runtime errors {#centralized-error-log}
+
+**Decision.** `lua/config/error_log.lua` appends every ERROR/WARN that passes through
+`vim.notify` to `~/.local/state/nvim-min/nvim-min/errors.log`, opened quickly with the new
+`:NvimMinErrors` command. Two different hooks feed it, swapped at the right moment:
+`wrap_notify()` (a plain wrapper around `vim.notify`, installed first thing in `init.lua`) until
+noice.nvim loads, then `wrap_noice()` (hooks `require("noice.message.manager").add` instead,
+installed via a `User LazyLoad` autocmd matched on `ev.data == "noice.nvim"` in
+`lua/config/autocmds.lua`).
+
+**Context.** Requested directly: a centralized log for in-editor errors, distinct from
+`~/.cache/nvim-min/{install,setup-cli}.log` (which only cover the shell installer and setup CLI —
+see "Logs & debugging" in CLAUDE.md). The obvious design — wrap `vim.notify`, call the previous
+value through — breaks the instant noice.nvim loads, for two compounding reasons found by
+reading both plugins' source directly:
+
+1. noice.nvim's own `vim.notify` takeover (`noice/source/notify.lua`'s `M.enable()`) is not a
+   pass-through wrapper — `M.notify` never calls whatever `vim.notify` was before it, it fully
+   replaces the pipeline. Re-wrapping `vim.notify` *after* noice has taken over would put this
+   log's wrapper outside noice, technically working for new notifications, but:
+2. noice runs a recurring 1-second watchdog (`noice/health.lua`'s `M.checker`, a
+   `Util.interval(1000, ...)`) that specifically checks whether `vim.notify` is still exactly
+   `noice.M.notify` and fires a real, repeating `log.error(...)` — visible to the user as an actual
+   error notification, every second — the moment anything else re-wraps it. Confirmed this
+   experimentally: an initial version that re-wrapped `vim.notify` on every `User LazyLoad` event
+   produced exactly this — a "`vim.notify` has been overwritten by another plugin?" error pointing
+   at `error_log.lua`, on top of an otherwise-working log.
+3. Separately, `snacks.nvim`'s notifier (enabled via `editor.lua`'s `notifier = {enabled = true}`,
+   itself added for `#noice-error-prominence`) installs a *self-replacing trampoline* — the first
+   call to `vim.notify` swaps the global to `Snacks.notifier.notify` directly, discarding whatever
+   was wrapped around it. Since `snacks.nvim` loads eagerly (`lazy = false`) before noice
+   (`event = "VeryLazy"`), this fires in the gap between the two, and headless testing couldn't
+   even see it: `--headless` with no UI attached never fires `UIEnter`, and lazy.nvim's `VeryLazy`
+   event is gated on exactly that (`lazy/core/util.lua`'s `very_lazy()` — waits for `UIEnter` if
+   `VimEnter` already happened when `LazyDone` fires, which it always has by then) — so noice
+   never loads at all in a headless test, no matter how long you `sleep`. Real interactive tmux
+   testing was the only way to see any of this, consistent with `#keymaps-stale-regression`'s
+   lesson.
+
+The fix hooks `noice.message.manager`'s `add` function instead — the shared internal sink every
+message (notify, cmdline, msg_show) already flows through — which sits underneath noice's own
+watchdog rather than contesting the thing the watchdog actually polices.
+
+**Verified** via real tmux sessions (not headless, per above): `:lua vim.notify(...)` at ERROR
+and WARN levels both landed in `errors.log` with correct level/title/text, noice's own toast still
+rendered normally, and no "overwritten by another plugin" error appeared — confirmed absent by
+grepping the full captured pane. `:NvimMinErrors` opens the file correctly in a new tab.

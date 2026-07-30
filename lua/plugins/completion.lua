@@ -22,7 +22,12 @@ return {
     },
     appearance = { nerd_font_variant = "mono" },
     completion = {
-      documentation = { auto_show = true, auto_show_delay_ms = 200 },
+      -- window.border defaults to nil (no border at all) — easy to miss
+      -- since menu/signature both default to a border already and this one
+      -- doesn't, and with onedark's transparent floats (see
+      -- lua/plugins/colorscheme.lua) a borderless doc popup has nothing at
+      -- all to visually separate it from whatever's behind the terminal.
+      documentation = { auto_show = true, auto_show_delay_ms = 200, window = { border = "rounded" } },
       menu = {
         border = "rounded",
         auto_show = true, -- default, made explicit: never a manual-trigger-only setup

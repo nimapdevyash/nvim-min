@@ -53,6 +53,14 @@ const PROVIDERS = {
     label: "Gemini",
     envVar: "GEMINI_API_KEY",
     getKeyUrl: "https://aistudio.google.com/apikey",
+    // A real, stable Google API key format (not specific to Gemini) —
+    // `AIza` + 35 more characters, 39 total. Not a hard validator (Google
+    // could change this), just a fast, offline hint that catches "this is
+    // clearly the wrong kind of credential" — e.g. an OAuth/Vertex AI token
+    // pasted by mistake instead of an AI-Studio key — before ever making a
+    // network call.
+    looksValid: (key) => /^AIza[\w-]{35}$/.test(key),
+    formatHint: "starts with AIza, 39 characters",
     async verify(key) {
       // Header, not `?key=` in the URL — confirmed both work identically
       // (same 400 on a bad key either way, vs. 403 with no auth at all),
@@ -69,6 +77,8 @@ const PROVIDERS = {
     label: "OpenAI",
     envVar: "OPENAI_API_KEY",
     getKeyUrl: "https://platform.openai.com/api-keys",
+    looksValid: (key) => /^sk-(proj-)?[\w-]{20,}$/.test(key),
+    formatHint: "starts with sk- or sk-proj-",
     async verify(key) {
       const res = await fetchWithTimeout("https://api.openai.com/v1/models", {
         headers: { Authorization: `Bearer ${key}` },
@@ -80,6 +90,8 @@ const PROVIDERS = {
     label: "Anthropic (Claude)",
     envVar: "ANTHROPIC_API_KEY",
     getKeyUrl: "https://console.anthropic.com/settings/keys",
+    looksValid: (key) => /^sk-ant-[\w-]{20,}$/.test(key),
+    formatHint: "starts with sk-ant-",
     async verify(key) {
       const res = await fetchWithTimeout("https://api.anthropic.com/v1/models", {
         headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
@@ -155,6 +167,14 @@ function hasApiKey(envVar) {
   return readSecretsLines().some((l) => l.startsWith(`${envVar}=`));
 }
 
+// Only ever used for verification (a real request, or an offline format
+// check) — never logged, never printed. `status`/`doctor` still only ever
+// report "set"/"not set", not this.
+function getApiKey(envVar) {
+  const line = readSecretsLines().find((l) => l.startsWith(`${envVar}=`));
+  return line ? line.slice(envVar.length + 1) : null;
+}
+
 function setApiKey(envVar, key) {
   ensureDir();
   const lines = readSecretsLines().filter((l) => !l.startsWith(`${envVar}=`));
@@ -221,7 +241,7 @@ function venvHasPip() {
   }
 }
 
-function runDoctorChecks() {
+async function runDoctorChecks() {
   const checks = [];
   const push = (name, ok, hint) => checks.push({ name, ok, hint });
 
@@ -272,19 +292,50 @@ function runDoctorChecks() {
     push("secrets.env permissions", true); // doesn't exist yet — nothing to check, not a failure
   }
 
+  // A key can be present and still be *wrong* — the wrong kind of
+  // credential entirely (an OAuth/Vertex AI token instead of an AI-Studio
+  // key, say), revoked, or just mistyped. `hasApiKey` alone would report
+  // "set" and miss all of that; this is what actually would have caught
+  // "ghost text doesn't work" instantly instead of needing a live
+  // interactive session to trace it back to the key. Live checks run for
+  // every stored key in parallel — one slow/offline provider shouldn't
+  // hold up reporting on the others.
+  const keyChecks = await Promise.all(
+    Object.values(PROVIDERS)
+      .filter((provider) => hasApiKey(provider.envVar))
+      .map(async (provider) => {
+        const key = getApiKey(provider.envVar);
+        if (provider.looksValid && !provider.looksValid(key)) {
+          return { name: `${provider.label} key format`, ok: false, hint: `doesn't look like a typical key (expected: ${provider.formatHint}) — get one at ${provider.getKeyUrl}` };
+        }
+        try {
+          const ok = await provider.verify(key);
+          return { name: `${provider.label} key`, ok, hint: ok ? undefined : "the provider rejected it (invalid or revoked) — re-run `nvim-min-setup ai`" };
+        } catch {
+          // Unreachable right now isn't the key's fault — not a failure,
+          // but still worth a quiet note rather than looking identical to
+          // an actually-confirmed-working key.
+          return { name: `${provider.label} key`, ok: true, hint: "couldn't reach the provider to verify (offline?)" };
+        }
+      }),
+  );
+  checks.push(...keyChecks);
+
   return checks;
 }
 
 async function cmdDoctor() {
   p.intro(pc.bgGreen(pc.black(" nvim-min · Doctor ")));
   const s = p.spinner();
-  s.start("Checking your system");
-  const checks = runDoctorChecks();
+  s.start("Checking your system (incl. a live check of any stored API keys)");
+  const checks = await runDoctorChecks();
   s.stop("Done");
 
   let failures = 0;
   for (const c of checks) {
-    if (c.ok) {
+    if (c.ok && c.hint) {
+      p.log.info(`${c.name}${pc.dim(` — ${c.hint}`)}`);
+    } else if (c.ok) {
       p.log.success(c.name);
     } else {
       failures++;
@@ -411,6 +462,14 @@ async function cmdAi() {
       validate: (value) => (value && value.trim().length > 0 ? undefined : "Can't be empty"),
     }),
   );
+
+  // Fast, offline, catches the class of mistake a network round-trip
+  // wouldn't even distinguish from "provider rejected it" — e.g. pasting an
+  // OAuth/Vertex AI token instead of an AI-Studio key, or a key for the
+  // wrong provider entirely.
+  if (provider.looksValid && !provider.looksValid(key.trim())) {
+    p.log.warn(`This doesn't look like a typical ${provider.label} key (expected: ${provider.formatHint}).`);
+  }
 
   const s = p.spinner();
   s.start("Verifying key");

@@ -87,6 +87,12 @@ Checks the same requirements `install.sh` installs — git, curl, ripgrep, fd, l
 discovering a missing binary secondhand, from a confusing error somewhere else. Doesn't fix
 anything itself; re-run `./install.sh` for that.
 
+**Also checks every stored API key, live** — a fast offline format check (does it even look like
+the right kind of credential for that provider?) plus a real request to the provider's own API.
+`hasApiKey`/`status` can only ever tell you a key is *present*; this is what actually tells you
+whether ghost text/chat will work right now, without needing to trace a "nothing happens when I
+type" report back to the key by hand.
+
 ## Debug log
 
 Every command run — including `doctor`'s results, whether a key was set/cleared for which

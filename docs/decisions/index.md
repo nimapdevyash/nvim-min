@@ -1470,3 +1470,30 @@ ends up correct afterward — this bug produced a perfectly reasonable-looking d
 actual keymaps were still wrong, because none of those checks exercise a specific keybinding
 resolving to a specific implementation. A real interactive session, not another `--headless`
 smoke test, is what actually caught it.
+
+---
+
+## `doctor` now live-verifies stored API keys, not just their presence {#doctor-key-verification}
+
+**Decision.** `nvim-min-setup doctor` now also checks every stored key: a fast offline format
+check (`looksValid`/`formatHint` per provider — Gemini's real, stable `AIza`+35-char Google API
+key format, OpenAI's `sk-`/`sk-proj-`, Anthropic's `sk-ant-`), then a real live request via the
+same `verify()` used by `nvim-min-setup ai`. A key that's unreachable right now (offline) is
+reported informationally, not as a failure — only a confirmed-bad key or wrong-looking format
+counts against the summary.
+
+**Context.** Root-caused a real "ghost text doesn't work" report to a stored `GEMINI_API_KEY`
+that was 53 characters and started with `AQ.` — nothing like a real AI-Studio key (`AIza...`,
+39 chars). `hasApiKey`/`status` only ever check *presence*, so neither would have caught this;
+tracing it back required a live interactive session, checking `vim.env.GEMINI_API_KEY` directly,
+and eyeballing the format by hand. `doctor` doing this automatically is what should have
+surfaced it instantly instead.
+
+**Verified.** Ran `doctor` against the actual malformed key on this machine — correctly flagged
+`Gemini key format` as the one failure, with every other check (including `secrets.env`
+permissions, which *are* correct) reported as passing, confirmed via the plain-text log entry
+(`doctor: ...Gemini key format=FAIL`), not just the terminal's own bullet styling (which turned
+out to be visually ambiguous between info/success/warn glyphs without color rendering — checked
+the log specifically to avoid drawing a conclusion from that ambiguity).
+
+---

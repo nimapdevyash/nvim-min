@@ -1,32 +1,44 @@
 return {
   {
-    "ibhagwan/fzf-lua",
-    cmd = "FzfLua",
-    keys = { "<leader>f" }, -- lazy-load on any <leader>f... mapping (defined in keymaps.lua)
+    -- Replaces both oil.nvim (file explorer) and fzf-lua (fuzzy finder) — see
+    -- docs/decisions/index.md#snacks-explorer and #snacks-picker-migration.
+    -- Explorer and every finder below are all `snacks.picker` sources under
+    -- the hood, one engine instead of two. Other snacks modules (dashboard,
+    -- notifier, terminal, ...) are never referenced anywhere in this config,
+    -- so they stay dormant — this config already has native replacements for
+    -- those, see CLAUDE.md principle #1.
+    "folke/snacks.nvim",
+    lazy = false,
     opts = {
-      winopts = { height = 0.85, width = 0.85, border = "rounded" },
-      fzf_colors = true,
-      file_icons = false, -- no icon-font plugin installed; text-only, one less dependency
+      explorer = { replace_netrw = true },
+      picker = {
+        sources = {
+          files = {
+            -- `.env` is almost always gitignored, and the ignore-file is
+            -- respected by default — same root cause/fix as fzf-lua's
+            -- equivalent option before it, see #find-files-no-ignore.
+            hidden = true,
+            ignored = true,
+            exclude = {
+              ".git", ".jj", "node_modules", "dist", "build", ".next",
+              "coverage", ".venv", "venv", "__pycache__", ".terraform", ".cache",
+            },
+          },
+        },
+      },
     },
   },
   {
-    "stevearc/oil.nvim",
-    -- oil's own README is explicit: "Lazy loading is not recommended because
-    -- it is very tricky to make it work correctly in all situations" — this
-    -- was exactly the cause of `<leader>e`/`:Oil` intermittently not working
-    -- (default_file_explorer needs oil's netrw-override autocmds active
-    -- *before* you ever open a directory, which a cmd/keys-triggered lazy
-    -- load can't guarantee). Oil is tiny; eager-loading it costs nothing.
+    -- Icon provider for snacks' explorer/picker file icons. Reintroduced
+    -- deliberately (mini.icons was cut earlier alongside mini.statusline —
+    -- see docs/decisions/index.md#native-statusline-terminal) because a tree
+    -- explorer with per-filetype icons is a genuine capability gap a native
+    -- replacement can't close; this config's terminal (kitty) already
+    -- renders Nerd Font glyphs correctly (confirmed for the statusline pills,
+    -- #statusline-pills), so there's no new font requirement.
+    "nvim-mini/mini.icons",
     lazy = false,
-    opts = {
-      default_file_explorer = true,
-      view_options = { show_hidden = true },
-      columns = {}, -- no icon-font plugin installed; plain filenames
-      keymaps = {
-        ["<C-h>"] = false, -- freed up for window navigation
-        ["<C-l>"] = false,
-      },
-    },
+    opts = {},
   },
   {
     "nvim-mini/mini.pairs",

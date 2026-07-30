@@ -8,8 +8,9 @@ the full reasoning.
 
 ## Preview images, SVGs, PDFs
 
-`lua/config/external.lua` figures out "what file are we talking about" (an oil.nvim entry under
-the cursor, else a path under the cursor via `<cfile>`, else the current buffer) and hands it to:
+`lua/config/external.lua` figures out "what file are we talking about" (a snacks explorer entry
+under the cursor, else a path under the cursor via `<cfile>`, else the current buffer) and hands
+it to:
 
 | Key | Action |
 |---|---|

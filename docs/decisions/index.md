@@ -778,3 +778,158 @@ it returns to the previous buffer with Neovim still running, rather than quittin
 
 ---
 
+## Find files: explicit `hidden`/`ignored` + a hardcoded noise-dir exclude list, to surface `.env` {#find-files-no-ignore}
+
+**Decision.** In `lua/plugins/editor.lua`'s `snacks.nvim` spec, set `picker.sources.files.hidden =
+true`, `ignored = true`, and an explicit `exclude` list: `node_modules`, `dist`, `build`, `.next`,
+`coverage`, `.venv`/`venv`, `__pycache__`, `.terraform`, `.cache` (on top of the finder's own
+`.git`/`.jj` defaults).
+
+**Context.** Reported bug: `<leader>ff` never showed `.env`. Root cause, verified empirically (not
+assumed) with real `fd`/`rg` runs against a throwaway git repo: the finder's default `hidden` flag
+already shows dotfiles, but nothing was passing `--no-ignore` — so anything listed in the project's
+own `.gitignore` stays hidden regardless, and `.env` is almost universally gitignored. Confirmed
+the two settings are genuinely independent (`--hidden` alone still hid `.env`; only also
+disrespecting the ignore file surfaced it). This was originally implemented and verified against
+fzf-lua's equivalent `no_ignore`/`fd_opts`/`rg_opts` options; carried over unchanged in spirit when
+fzf-lua was replaced by `snacks.picker` the same session (see
+[#snacks-picker-migration](#snacks-picker-migration)) — `snacks.picker.files`'s `hidden`/`ignored`/
+`exclude` fields build the exact same underlying `fd`/`rg` flags (confirmed by reading
+`lua/snacks/picker/source/files.lua`), so the fix and its reasoning didn't need to change, only
+which plugin's option names carry it.
+
+**Alternatives considered.**
+- Disrespecting the ignore file with no manual excludes — rejected: verified with a real repo
+  containing `node_modules`/`dist`, and both reappeared in full, which would make `<leader>ff`
+  unusable on any real MERN project.
+- ripgrep glob-override tricks (`-g '.env*'` layered over default ignore behavior) — tested first;
+  an unprefixed `-g` pattern narrows results to *only* that match rather than adding it on top of
+  the normal listing, so this actively broke the picker (everything else vanished) rather than
+  fixing it.
+
+**Trade-off accepted.** This trades "always exactly matches whatever this specific project's
+`.gitignore` says" for "always matches this fixed list + shows genuinely gitignored files like
+`.env`." A project with its own unusual gitignored noise directory not in the list above will show
+it in `<leader>ff` results — acceptable since seeing a secrets file was the explicit ask and the
+list above already covers this config's stated stack (MERN + DevOps + Python).
+
+**Example.**
+```lua
+picker = {
+  sources = {
+    files = {
+      hidden = true,
+      ignored = true,
+      exclude = { ".git", ".jj", "node_modules", "dist", "build", ".next", ... },
+    },
+  },
+}
+```
+
+---
+
+## File explorer: oil.nvim replaced by snacks.nvim's explorer {#snacks-explorer}
+
+**Decision.** Replace `stevearc/oil.nvim` with `folke/snacks.nvim`'s `explorer` module
+(`opts.explorer = { replace_netrw = true }`), bound to `-` and `<leader>e` via `Snacks.explorer()`.
+
+**Context.** Explicit ask: "the most modern and feature rich" file explorer, after comparing
+oil.nvim (buffer-as-filesystem editing, no tree/git/diagnostics) against neo-tree.nvim,
+snacks.nvim's explorer, and mini.files. This directly reverses part of the earlier
+[oil.nvim decision](#oil-eager) — that entry is left as-is above since it was the correct call
+*at the time*, under a different stated priority (minimalism first). The user's own explicit
+standing instruction going forward is to lead with the modern/feature-rich option even where it
+costs more than the leanest native-ish choice — see the user's own words: "always prefer more
+modern alternatives."
+
+**Why snacks.nvim's explorer specifically, not neo-tree.nvim or mini.files.** Verified (not
+assumed) against `folke/snacks.nvim`'s actual docs/source before committing: explorer is a
+`snacks.picker` source (`lua/snacks/picker/source/explorer.lua`), not a separate tree engine, and
+its real defaults (confirmed by reading `lua/snacks/picker/config/sources.lua`) already give
+`git_status = true`, `diagnostics = true`, `tree = true`, a sidebar layout, and a full set of
+filesystem actions (`a`/`d`/`r`/`c`/`m`/`o` for add/delete/rename/copy/move/open-externally) with
+zero extra config. neo-tree.nvim would have added a second, unrelated plugin dependency purely for
+the explorer; mini.files is leaner but doesn't give git-status/diagnostics badges out of the box.
+Since `snacks.nvim` was already the modern choice on the table, using its bundled explorer avoided
+adding a plugin at all for this — see [#snacks-picker-migration](#snacks-picker-migration) for how
+this same install then also replaced the separate fuzzy-finder plugin.
+
+**oil.nvim fully removed, not kept alongside.** Considered keeping oil for its "edit filenames as
+a text buffer" bulk-rename workflow (explorer doesn't replicate that exact interaction), but the
+explicit choice was full replacement — simpler keymap surface, one file-browsing mental model
+instead of two. `lua/config/external.lua`'s `target_path()` (used by `<leader>ox`/`<leader>oi`)
+depended on oil's `get_cursor_entry()`/`get_current_dir()` API; rewritten against
+`Snacks.picker.get({source="explorer"})[1]:current()` instead — verified the item shape carries a
+`.file` field by reading `snacks.picker.explorer.Item`'s class annotation, not guessed.
+
+**Icons reintroduced.** `mini.icons` was cut once already (see
+[native-statusline-terminal](#native-statusline-terminal)) on the grounds that this config had no
+active use for icon glyphs. A tree explorer with per-filetype icons is a genuine, different
+capability gap that reasoning didn't anticipate — re-added specifically for this, not as general
+decoration. No new font requirement: this terminal was already confirmed to render Nerd Font
+glyphs correctly for the statusline pills (`#statusline-pills`), and snacks' own icon fallback
+(`lua/snacks/util/init.lua`, `M.icon`) always renders *some* Nerd Font glyph regardless — without
+`mini.icons`/`nvim-web-devicons` it just can't pick a per-filetype one, it doesn't fall back to
+plain text.
+
+---
+
+## Fuzzy finder: fzf-lua replaced by snacks.picker {#snacks-picker-migration}
+
+**Decision.** Remove `ibhagwan/fzf-lua` entirely. Every call site — `<leader>ff`/`fg`/`fw`/`fb`/
+`fr`/`fh`/`fd`/`fc`/`fs`/`fR`, `<leader>?`, `<leader>fK`, all six LSP picker keymaps in
+`lua/plugins/lsp.lua`, the dashboard's find-files/live-grep/recent-files/grep-keybindings actions,
+and harpoon's searchable mark list — moved to the equivalent `snacks.picker` source or the generic
+`Snacks.picker.pick({items=...})` API for harpoon's custom list.
+
+**Context.** Installing `snacks.nvim` for the explorer ([#snacks-explorer](#snacks-explorer))
+brought `snacks.picker` — a complete second fuzzy-finder engine — in alongside the already-installed
+`fzf-lua`, both actively exercised (explorer isn't dormant the way snacks' unused
+dashboard/terminal/notifier modules are, since it's invoked constantly). Explicit instruction:
+"remove all the overlapping plugins and keep the only needed and modern alternatives of each."
+This was the one genuine overlap found in an audit of the full plugin list — every other
+seemingly-competing snacks module (terminal, dashboard, notifier) is never referenced anywhere in
+this config, so it stays dormant and costs nothing; only picker was actually live twice.
+
+**Every mapping verified against real source before writing it**, not guessed from either
+project's docs — `snacks.picker.config.sources` was read directly to confirm exact source names:
+
+| fzf-lua | snacks.picker |
+|---|---|
+| `files()` | `files()` |
+| `live_grep()` | `grep()` |
+| `grep_cword()` | `grep_word()` |
+| `buffers()` | `buffers()` |
+| `oldfiles()` | `recent()` |
+| `helptags()` | `help()` |
+| `diagnostics_workspace()` | `diagnostics()` |
+| `git_commits()` | `git_log()` |
+| `git_status()` | `git_status()` |
+| `resume()` | `resume()` |
+| `keymaps()` | `keymaps()` |
+| `grep_curbuf()` | `lines()` |
+| `lsp_definitions/references/implementations()` | same names |
+| `lsp_typedefs()` | `lsp_type_definitions()` |
+| `lsp_document_symbols()` | `lsp_symbols()` |
+| `lsp_live_workspace_symbols()` | `lsp_workspace_symbols()` |
+| `fzf_exec(entries, {actions=...})` | `pick({items=..., actions=..., win.input.keys=...})` |
+
+**harpoon.lua's custom list needed the most care.** fzf-lua's `fzf_exec` takes a flat list of
+strings plus an `actions` table keyed by fzf bind names (`"ctrl-x"`). snacks' generic `pick()`
+instead takes structured `items` (tables, not strings — `{idx=.., text=..}`), a `confirm` callback,
+a named `actions` table, and a `win.input.keys` map from key to action *name* (the same pattern
+snacks' own built-in `marks` source uses for its `<c-x>` delete-mark binding, confirmed by reading
+`lua/snacks/picker/config/sources.lua`'s `M.marks` entry before copying its shape).
+
+**Also fixed while migrating:** `lua/config/autocmds.lua`'s `close_with_q` autocmd listed
+`"fzf-lua"` as a filetype pattern (for binding `q` to close). Dropped, not replaced with a
+snacks-specific filetype — snacks pickers already bind `q` to `cancel` by default (confirmed in
+`lua/snacks/picker/config/defaults.lua`), so no autocmd is needed for that anymore.
+
+**Alternatives considered.** Keep both, leave `snacks.picker` unused outside the explorer —
+rejected per the explicit "remove overlapping plugins" instruction; the redundancy (two fuzzy-list
+engines resident and one of them actively used elsewhere) is exactly what was asked to be
+eliminated, not a marginal case for keeping the status quo.
+
+---
+

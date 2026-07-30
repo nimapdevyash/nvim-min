@@ -53,7 +53,7 @@ the other two at runtime.
    a doc page reference something this change just renamed, removed, or contradicted?
 3. **`lua/config/keymaps.lua` is the single source of truth for keybindings.** No which-key or
    similar popup plugin — ever. New keybindings go in that one file, grouped under the existing
-   section headers, with a `desc` on every mapping (this is what makes `<leader>?` / fzf-lua's
+   section headers, with a `desc` on every mapping (this is what makes `<leader>?` / snacks.picker's
    keymap picker useful — it reads `desc`). Update `KEYBINDINGS.md` to match whenever
    `keymaps.lua` changes; it's documentation, not the source of truth, and drifting is a bug.
 4. **Prefer native Neovim APIs over plugin frameworks.** LSP servers are enabled with

@@ -39,7 +39,7 @@ autocmd("BufWritePre", {
 -- Close throwaway buffers with a single `q`
 autocmd("FileType", {
   group = augroup("close_with_q", { clear = true }),
-  pattern = { "help", "qf", "lspinfo", "checkhealth", "man", "fzf-lua" },
+  pattern = { "help", "qf", "lspinfo", "checkhealth", "man" },
   callback = function(args)
     vim.bo[args.buf].buflisted = false
     vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = args.buf, silent = true })

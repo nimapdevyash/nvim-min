@@ -74,32 +74,40 @@ function M.jump(index)
   vim.cmd.edit(vim.fn.fnameescape(path))
 end
 
---- Fuzzy-searchable list of marks (fzf-lua gives us the "search them" part
---- for free — no separate picker UI to build). <cr> jumps, ctrl-x removes.
+--- Fuzzy-searchable list of marks (snacks.picker gives us the "search them"
+--- part for free — no separate picker UI to build). <cr> jumps, ctrl-x removes.
 function M.list()
   local marks = load()
   if #marks == 0 then
     return vim.notify("harpoon: no marks yet — <leader>ma to add the current file", vim.log.levels.INFO)
   end
 
-  local entries = {}
+  local items = {}
   for i, path in ipairs(marks) do
-    entries[i] = string.format("%d  %s", i, vim.fn.fnamemodify(path, ":~:."))
+    items[i] = { idx = i, text = string.format("%d  %s", i, vim.fn.fnamemodify(path, ":~:.")) }
   end
 
-  require("fzf-lua").fzf_exec(entries, {
-    prompt = "Harpoon> ",
+  require("snacks").picker.pick({
+    title = "Harpoon",
+    items = items,
+    format = "text",
+    confirm = function(picker, item)
+      picker:close()
+      if item then M.jump(item.idx) end
+    end,
+    win = {
+      input = {
+        keys = { ["<c-x>"] = { "harpoon_remove", mode = { "n", "i" } } },
+      },
+    },
     actions = {
-      ["default"] = function(selected)
-        local idx = tonumber(selected[1]:match("^(%d+)"))
-        if idx then M.jump(idx) end
-      end,
-      ["ctrl-x"] = function(selected)
-        local idx = tonumber(selected[1]:match("^(%d+)"))
-        if not idx then return end
-        table.remove(marks, idx)
+      harpoon_remove = function(picker, item)
+        if not item then return end
+        table.remove(marks, item.idx)
         save(marks)
-        vim.notify("harpoon: removed mark " .. idx, vim.log.levels.INFO)
+        vim.notify("harpoon: removed mark " .. item.idx, vim.log.levels.INFO)
+        picker:close()
+        M.list()
       end,
     },
   })
